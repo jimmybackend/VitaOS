@@ -20,6 +20,7 @@ typedef struct {
     uint64_t firmware_type;
 
     const char *audit_db_path;
+    const char *vitanet_seed_endpoint;
 
     void *uefi_image_handle;
     void *uefi_system_table;
