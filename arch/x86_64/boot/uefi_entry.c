@@ -33,9 +33,11 @@ static efi_system_table_t *g_st = 0;
 
 static void ascii_to_char16(const char *src, char16_t *dst, size_t dst_cap) {
     size_t i = 0;
+
     if (!dst || dst_cap == 0) {
         return;
     }
+
     if (!src) {
         dst[0] = 0;
         return;
@@ -45,6 +47,7 @@ static void ascii_to_char16(const char *src, char16_t *dst, size_t dst_cap) {
         dst[i] = (char16_t)(uint8_t)src[i];
         i++;
     }
+
     dst[i++] = '\r';
     dst[i++] = '\n';
     dst[i] = 0;
@@ -52,6 +55,7 @@ static void ascii_to_char16(const char *src, char16_t *dst, size_t dst_cap) {
 
 static void uefi_console_write(const char *text) {
     char16_t buffer[256];
+
     if (!g_st || !g_st->con_out || !g_st->con_out->output_string) {
         return;
     }
@@ -72,6 +76,7 @@ efi_status_t efi_main(efi_handle_t image_handle, efi_system_table_t *system_tabl
     handoff.arch_name = "x86_64";
     handoff.firmware_type = VITA_FIRMWARE_UEFI;
     handoff.audit_db_path = 0;
+    handoff.vitanet_seed_endpoint = 0;
     handoff.uefi_image_handle = image_handle;
     handoff.uefi_system_table = system_table;
 
