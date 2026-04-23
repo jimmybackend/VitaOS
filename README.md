@@ -61,6 +61,7 @@ vitaos/
 - `docs/audit/audit-model.md`
 - `docs/audit/sqlite-contract.md`
 - `docs/roadmap/F1-roadmap.md`
+- `docs/network/vitanet-v0.md`
 - `proto/vitanet/README.md`
 
 ## Licencia sugerida

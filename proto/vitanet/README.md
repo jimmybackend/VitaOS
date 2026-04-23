@@ -16,18 +16,17 @@ VitaNet es el protocolo mínimo entre nodos VitaOS.
 - `HELLO`
 - `CAPS`
 - `HEARTBEAT`
-- `PROPOSAL`
 - `LINK_ACCEPT`
 - `LINK_REJECT`
-- `TASK_ASSIGN`
-- `TASK_DONE`
-- `AUDIT_REPL`
+- `AUDIT_BLOCK` (base mínima de replicación en hosted)
 
 ## Implementación inicial
 
-Transportes prioritarios:
+Transporte implementado en este slice:
+- Hosted UDP/IPv4 sobre Ethernet del host
+
+Transporte prioritario objetivo:
 - Ethernet
-- Wi-Fi
 
 ## Reglas para Codex
 
