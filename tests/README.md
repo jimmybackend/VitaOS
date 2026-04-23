@@ -1,13 +1,22 @@
 # Tests — VitaOS con IA
 
-## Objetivo
+## Smoke test de boot UEFI
 
-Tener pruebas pequeñas y reproducibles para cada milestone.
+`tools/test/smoke-boot.sh` valida banner de arranque cuando QEMU/OVMF están disponibles.
 
-## Prioridades F1
+## Smoke test de auditoría persistente (SQLite)
 
-- boot smoke test;
-- audit schema test;
-- first event insertion test;
-- AI proposal lifecycle test;
-- peer discovery simulation test.
+`tools/test/smoke-audit.sh` valida:
+- creación de DB;
+- creación de `boot_session`;
+- inserción de `audit_event` iniciales;
+- continuidad de `event_seq`;
+- continuidad de `prev_hash`;
+- recomputación de `event_hash`.
+- inserción de `hardware_snapshot` con `ram_bytes` > 0.
+
+Ejecución:
+
+```bash
+make smoke-audit
+```
