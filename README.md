@@ -59,6 +59,7 @@ vitaos/
 - `docs/architecture/boot-flow.md`
 - `docs/architecture/ai-core.md`
 - `docs/audit/audit-model.md`
+- `docs/audit/audit-replication.md`
 - `docs/audit/sqlite-contract.md`
 - `docs/roadmap/F1-roadmap.md`
 - `docs/network/vitanet-v0.md`
