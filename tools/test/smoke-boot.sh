@@ -4,9 +4,12 @@ set -euo pipefail
 QEMU_BIN=${QEMU_BIN:-qemu-system-x86_64}
 OVMF_CODE=${OVMF_CODE:-/usr/share/OVMF/OVMF_CODE.fd}
 OVMF_VARS=${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS.fd}
+
 LOG_DIR=build/test
 LOG_FILE="$LOG_DIR/smoke-boot.log"
+
 mkdir -p "$LOG_DIR"
+rm -f "$LOG_FILE"
 
 if ! command -v "$QEMU_BIN" >/dev/null 2>&1; then
   echo "SKIP: qemu not installed" >&2
@@ -39,8 +42,8 @@ set +e
 PID=$!
 
 sleep 5
-kill "$PID" >/dev/null 2>&1
-wait "$PID" >/dev/null 2>&1
+kill "$PID" >/dev/null 2>&1 || true
+wait "$PID" >/dev/null 2>&1 || true
 set -e
 
 if ! grep -q "VitaOS with AI / VitaOS con IA" "$LOG_FILE"; then
@@ -48,16 +51,29 @@ if ! grep -q "VitaOS with AI / VitaOS con IA" "$LOG_FILE"; then
   cat "$LOG_FILE" >&2
   exit 1
 fi
+
 if ! grep -q "Boot: OK" "$LOG_FILE"; then
   echo "smoke failed: Boot status not found" >&2
   exit 1
 fi
+
 if ! grep -q "Arch: x86_64" "$LOG_FILE"; then
   echo "smoke failed: arch line not found" >&2
   exit 1
 fi
+
 if ! grep -q "Console: OK" "$LOG_FILE"; then
   echo "smoke failed: console line not found" >&2
+  exit 1
+fi
+
+if ! grep -q "Audit: FAILED" "$LOG_FILE"; then
+  echo "smoke failed: expected restricted EFI audit state" >&2
+  exit 1
+fi
+
+if ! grep -q "Operational mode blocked / Modo operativo bloqueado" "$LOG_FILE"; then
+  echo "smoke failed: restricted guided mode line not found" >&2
   exit 1
 fi
 
