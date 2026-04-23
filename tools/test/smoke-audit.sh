@@ -20,13 +20,25 @@ fi
 
 BOOT_COUNT=$(sqlite3 "$DB_PATH" "select count(*) from boot_session;")
 EVENT_COUNT=$(sqlite3 "$DB_PATH" "select count(*) from audit_event;")
+HW_COUNT=$(sqlite3 "$DB_PATH" "select count(*) from hardware_snapshot;")
 
 if [[ "$BOOT_COUNT" -lt 1 ]]; then
   echo "smoke failed: no boot_session" >&2
   exit 1
 fi
-if [[ "$EVENT_COUNT" -lt 4 ]]; then
-  echo "smoke failed: expected >=4 audit_event, got $EVENT_COUNT" >&2
+if [[ "$EVENT_COUNT" -lt 7 ]]; then
+  echo "smoke failed: expected >=7 audit_event, got $EVENT_COUNT" >&2
+  exit 1
+fi
+
+if [[ "$HW_COUNT" -lt 1 ]]; then
+  echo "smoke failed: no hardware_snapshot" >&2
+  exit 1
+fi
+
+RAM_BYTES=$(sqlite3 "$DB_PATH" "select coalesce(ram_bytes,0) from hardware_snapshot order by id desc limit 1;")
+if [[ "$RAM_BYTES" -le 0 ]]; then
+  echo "smoke failed: ram_bytes not detected" >&2
   exit 1
 fi
 

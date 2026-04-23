@@ -50,6 +50,7 @@ make smoke-audit
 El smoke test valida:
 - existencia de `boot_session`;
 - existencia de `audit_event` iniciales;
+- `hardware_snapshot` persistido;
 - continuidad de `event_seq`;
 - continuidad de `prev_hash`;
 - recomputación de `event_hash`.
@@ -59,4 +60,5 @@ El smoke test valida:
 ```bash
 sqlite3 build/audit/vitaos-audit.db "select boot_id, arch, boot_unix from boot_session;"
 sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, event_hash from audit_event order by id;"
+sqlite3 build/audit/vitaos-audit.db "select cpu_arch,cpu_model,ram_bytes,firmware_type,console_type,net_count,storage_count,usb_count,wifi_count from hardware_snapshot order by id desc limit 1;"
 ```
