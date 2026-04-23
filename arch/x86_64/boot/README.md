@@ -1,10 +1,15 @@
 # x86_64 boot
 
-Objetivo F1:
-- UEFI genérico.
-- Preparar stack y handoff para `kmain()`.
+Implementación actual (slice F1A):
+- entrada UEFI real (`efi_main`) en `uefi_entry.c`;
+- enlace de consola temprana UEFI al kernel;
+- creación de `vita_handoff_t` explícito;
+- llamada directa a `kmain(&handoff)`.
 
-Pendiente para Codex:
-- definir ABI del handoff;
-- elegir formato de imagen EFI;
-- documentar memoria reservada para consola temprana y auditoría temprana.
+Contrato de handoff:
+- definido en `include/vita/boot.h`.
+
+Cómo probar:
+1. `make`
+2. `make run`
+3. `make smoke`

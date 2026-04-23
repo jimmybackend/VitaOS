@@ -8,16 +8,21 @@ Sin auditoría persistente válida, VitaOS no entra en modo operativo completo.
 
 `schema/audit.sql` es el contrato canónico del modelo de auditoría.
 
-## Objetos principales
+## Implementación mínima funcional (F1A actual)
 
-- `boot_session`
-- `hardware_snapshot`
-- `audit_event`
-- `ai_proposal`
-- `human_response`
-- `node_peer`
-- `node_task`
-- `knowledge_pack`
+Para el slice actual, el backend persistente usa SQLite en flujo hosted de validación.
+
+- DB por defecto: `build/audit/vitaos-audit.db`
+- Esquema aplicado automáticamente desde `schema/audit.sql` al iniciar.
+- Cada boot persistente crea:
+  - 1 fila en `boot_session`
+  - eventos iniciales en `audit_event` con hash chain
+
+Eventos iniciales esperados:
+1. `BOOT_STARTED`
+2. `HANDOFF_TO_KMAIN`
+3. `CONSOLE_READY`
+4. `AUDIT_BACKEND_READY`
 
 ## Reglas
 
@@ -30,15 +35,28 @@ Sin auditoría persistente válida, VitaOS no entra en modo operativo completo.
 
 ## Integridad
 
-Cada evento debe calcular `event_hash` y enlazarse al `prev_hash`.
+Cada evento calcula `event_hash` con encadenamiento sobre `prev_hash`.
 
-## Exportación
+Payload actual del hash:
 
-F1 puede exportar:
-- SQL dump
-- JSONL
-- snapshot resumido para análisis externo
+`boot_id || event_seq || event_type || severity || actor_type || summary || details_json || monotonic_ns || prev_hash`
 
-## Decisión de diseño
+## Validación mínima reproducible
 
-Aunque SQLite es el backend, el modelo sigue siendo append-mostly.
+```bash
+make smoke-audit
+```
+
+El smoke test valida:
+- existencia de `boot_session`;
+- existencia de `audit_event` iniciales;
+- continuidad de `event_seq`;
+- continuidad de `prev_hash`;
+- recomputación de `event_hash`.
+
+## Inspección manual rápida
+
+```bash
+sqlite3 build/audit/vitaos-audit.db "select boot_id, arch, boot_unix from boot_session;"
+sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, event_hash from audit_event order by id;"
+```
