@@ -22,7 +22,5 @@ void proposal_generate_initial(const vita_handoff_t *handoff, const vita_hw_snap
 void proposal_show_all(void);
 bool proposal_handle_command(const char *line);
 void proposal_hosted_repl(void);
-int proposal_count_all(void);
-int proposal_count_pending(void);
 
 #endif

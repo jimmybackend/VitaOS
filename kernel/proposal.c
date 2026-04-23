@@ -163,24 +163,10 @@ static proposal_slot_t *find_by_id(const char *id) {
     return 0;
 }
 
-int proposal_count_all(void) {
-    return g_count;
-}
-
-int proposal_count_pending(void) {
-    int pending = 0;
-    for (int i = 0; i < g_count; ++i) {
-        if (str_eq(g_proposals[i].status, "PENDING")) {
-            pending++;
-        }
-    }
-    return pending;
-}
-
 bool proposal_handle_command(const char *line) {
     if (!line) return false;
 
-    if (starts_with(line, "list") || starts_with(line, "proposals")) {
+    if (starts_with(line, "list")) {
         proposal_show_all();
         return true;
     }
@@ -215,7 +201,7 @@ bool proposal_handle_command(const char *line) {
 
 #ifdef VITA_HOSTED
     if (starts_with(line, "help")) {
-        console_write_line("commands: status | hw | audit | proposals | peers | emergency | helpme | approve <id> | reject <id> | shutdown");
+        console_write_line("commands: list | approve <id> | reject <id> | exit");
         return true;
     }
 #endif

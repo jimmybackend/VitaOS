@@ -4,12 +4,12 @@
  */
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include <vita/audit.h>
 #include <vita/boot.h>
 #include <vita/console.h>
 #include <vita/hw.h>
-#include <vita/proposal.h>
 
 void panic_fatal(const char *reason);
 
@@ -31,11 +31,52 @@ static bool handoff_valid(const vita_handoff_t *handoff) {
     return true;
 }
 
+static void u64_to_dec(uint64_t v, char out[32]) {
+    char tmp[32];
+    int i = 0;
+    int j = 0;
+    if (v == 0) {
+        out[0] = '0';
+        out[1] = '\0';
+        return;
+    }
+    while (v > 0 && i < (int)sizeof(tmp) - 1) {
+        tmp[i++] = (char)('0' + (v % 10));
+        v /= 10;
+    }
+    while (i > 0) {
+        out[j++] = tmp[--i];
+    }
+    out[j] = '\0';
+}
+
+static void console_show_hw(const vita_hw_snapshot_t *hw) {
+    char num[32];
+    console_write_line("HW Snapshot:");
+    console_write_line("cpu_arch:");
+    console_write_line(hw->cpu_arch[0] ? hw->cpu_arch : "unknown");
+    console_write_line("cpu_model:");
+    console_write_line(hw->cpu_model[0] ? hw->cpu_model : "unavailable");
+    console_write_line("ram_bytes:");
+    u64_to_dec(hw->ram_bytes, num);
+    console_write_line(num);
+    console_write_line("firmware_type:");
+    console_write_line(hw->firmware_type[0] ? hw->firmware_type : "unknown");
+    console_write_line("console_type:");
+    console_write_line(hw->console_type[0] ? hw->console_type : "unknown");
+    console_write_line("net_count:");
+    u64_to_dec((uint64_t)hw->net_count, num); console_write_line(num);
+    console_write_line("storage_count:");
+    u64_to_dec((uint64_t)hw->storage_count, num); console_write_line(num);
+    console_write_line("usb_count:");
+    u64_to_dec((uint64_t)hw->usb_count, num); console_write_line(num);
+    console_write_line("wifi_count:");
+    u64_to_dec((uint64_t)hw->wifi_count, num); console_write_line(num);
+}
+
 void kmain(const vita_handoff_t *handoff) {
     vita_boot_status_t status;
     vita_hw_snapshot_t hw;
-    bool ai_core_online = false;
-
     mem_zero(&status, sizeof(status));
     mem_zero(&hw, sizeof(hw));
     status.arch_name = "x86_64";
@@ -73,16 +114,12 @@ void kmain(const vita_handoff_t *handoff) {
         if (audit_persist_hardware_snapshot(&hw)) {
             audit_emit_boot_event("HW_SNAPSHOT_PERSISTED", "hardware snapshot persisted");
         }
+        console_show_hw(&hw);
     }
 
-    proposal_generate_initial(handoff, &hw, status.audit_ready);
-    ai_core_online = true;
-
     console_banner(&status);
-    console_show_guided_welcome(handoff, &status, &hw, ai_core_online);
 
     if (handoff->firmware_type == VITA_FIRMWARE_HOSTED) {
-        console_guided_hosted_loop(handoff, &status, &hw, ai_core_online);
         return;
     }
 

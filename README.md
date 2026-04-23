@@ -104,13 +104,6 @@ Salida esperada:
 make run
 ```
 
-### Hosted runner (validación SQLite)
-
-```bash
-make hosted
-./build/hosted/vitaos-hosted build/audit/vitaos-audit.db
-```
-
 ### Smoke test
 
 ```bash
@@ -138,7 +131,6 @@ Verificación manual:
 ```bash
 sqlite3 build/audit/vitaos-audit.db "select boot_id, arch, boot_unix from boot_session;"
 sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, event_hash from audit_event order by id;"
-# eventos esperados incluyen BOOT/HANDOFF/CONSOLE/AUDIT/HW_DISCOVERY/HW_SNAPSHOT
 ```
 
 
@@ -147,37 +139,3 @@ sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, ev
 ```bash
 sqlite3 build/audit/vitaos-audit.db "select cpu_arch,cpu_model,ram_bytes,firmware_type,console_type,net_count,storage_count,usb_count,wifi_count from hardware_snapshot order by id desc limit 1;"
 ```
-
-
-### Consola guiada bilingüe (hosted)
-
-Al iniciar en hosted, VitaOS entra a la experiencia principal guiada y auditada.
-
-Comandos base:
-- `status`
-- `hw`
-- `audit`
-- `proposals` (o `list`)
-- `peers`
-- `helpme`
-- `emergency <texto libre>`
-- `approve <id>`
-- `reject <id>`
-- `shutdown`
-
-Ejemplo reproducible:
-
-```bash
-printf 'status
-proposals
-emergency pain and bleeding
-approve P-1
-reject P-2
-shutdown
-' | ./build/hosted/vitaos-hosted build/audit/vitaos-audit.db
-```
-
-La consola guiada emite y persiste eventos: `GUIDED_CONSOLE_SHOWN`, `MENU_OPTION_SELECTED`, `EMERGENCY_SESSION_STARTED`, `EMERGENCY_INPUT_RECEIVED`, `STRUCTURED_RESPONSE_SHOWN`.
-
-Documentación de flujo de emergencia:
-- `docs/console/emergency-flow.md`
