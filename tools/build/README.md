@@ -1,17 +1,18 @@
 # Build Tools — VitaOS con IA
 
-Este directorio contendrá scripts de build reproducible.
+Scripts actuales:
 
-## Objetivos previstos
+- `tools/build/build-x86_64.sh`
+  - limpia y compila `BOOTX64.EFI`.
+- `tools/build/qemu-x86_64.sh`
+  - ejecuta en QEMU + OVMF usando `build/efi` como volumen FAT.
 
-- toolchain checks;
-- build x86_64 UEFI;
-- build ARM64 posterior;
-- empaquetado de imagen live;
-- ejecución de QEMU.
+Targets make:
 
-## Sugerencias iniciales
-
-- `build-x86_64.sh`
-- `build-arm64.sh`
-- `qemu-x86_64.sh`
+```bash
+make            # bootx64.efi
+make hosted     # binario hosted para validación SQLite
+make run        # arranque QEMU
+make smoke      # smoke de banner (QEMU)
+make smoke-audit # smoke de auditoría SQLite
+```

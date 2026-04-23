@@ -75,3 +75,60 @@ Este repositorio contiene stubs intencionales. Antes de generar código, Codex d
 - explicar supuestos;
 - producir código completo cuando se le pida;
 - respetar el milestone actual.
+
+
+## Vertical slice F1A (UEFI -> kmain)
+
+Este repositorio ya incluye un camino ejecutable mínimo de arranque x86_64 UEFI hasta `kmain()` con consola temprana.
+
+### Requisitos
+
+- `clang` + `lld`
+- `qemu-system-x86_64`
+- OVMF en:
+  - `/usr/share/OVMF/OVMF_CODE.fd`
+  - `/usr/share/OVMF/OVMF_VARS.fd`
+
+### Build
+
+```bash
+make
+```
+
+Salida esperada:
+- `build/efi/EFI/BOOT/BOOTX64.EFI`
+
+### Run (QEMU)
+
+```bash
+make run
+```
+
+### Smoke test
+
+```bash
+make smoke
+```
+
+El smoke valida que aparezcan estas líneas:
+- `VitaOS with AI / VitaOS con IA`
+- `Boot: OK`
+- `Arch: x86_64`
+- `Console: OK`
+
+
+### Smoke test de auditoría persistente (SQLite)
+
+```bash
+make smoke-audit
+```
+
+Base de datos generada por defecto:
+- `build/audit/vitaos-audit.db`
+
+Verificación manual:
+
+```bash
+sqlite3 build/audit/vitaos-audit.db "select boot_id, arch, boot_unix from boot_session;"
+sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, event_hash from audit_event order by id;"
+```
