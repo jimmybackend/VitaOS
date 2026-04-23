@@ -6,6 +6,25 @@ Versión: 0.1-draft
 Idioma base: Español / English
 Estado: Documento fundacional
 
+> Nota de estado actual del slice (2026-04-23)
+>
+> Este documento se conserva como especificación fundacional completa.
+> El estado práctico actual del repo ya validó un slice mínimo real de F1A/F1B con:
+> - build UEFI x86_64;
+> - build hosted;
+> - `kmain()` integrado;
+> - consola guiada mínima;
+> - hardware discovery básico;
+> - auditoría SQLite persistente en hosted;
+> - proposal engine inicial;
+> - VitaNet hosted mínimo;
+> - `node_peer` persistido;
+> - smoke tests de boot y auditoría.
+>
+> La ruta UEFI hoy debe entenderse como boot + consola + diagnóstico restringido.
+> La ruta hosted es la principal para validar auditoría persistente, proposals y VitaNet mínimo.
+
+
 ---
 
 ## 1. Propósito del proyecto
