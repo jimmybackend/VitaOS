@@ -12,11 +12,8 @@
 - inserción de `audit_event` iniciales;
 - continuidad de `event_seq`;
 - continuidad de `prev_hash`;
-- recomputación de `event_hash`;
-- inserción de `hardware_snapshot` con `ram_bytes` > 0;
-- inserción de `ai_proposal`;
-- inserción de `human_response`;
-- eventos de propuesta (created/shown/approved/rejected).
+- recomputación de `event_hash`.
+- inserción de `hardware_snapshot` con `ram_bytes` > 0.
 
 Ejecución:
 

@@ -10,7 +10,6 @@
 #include <vita/boot.h>
 #include <vita/console.h>
 #include <vita/hw.h>
-#include <vita/proposal.h>
 
 void panic_fatal(const char *reason);
 
@@ -118,13 +117,9 @@ void kmain(const vita_handoff_t *handoff) {
         console_show_hw(&hw);
     }
 
-    proposal_generate_initial(handoff, &hw, status.audit_ready);
-
     console_banner(&status);
-    proposal_show_all();
 
     if (handoff->firmware_type == VITA_FIRMWARE_HOSTED) {
-        proposal_hosted_repl();
         return;
     }
 

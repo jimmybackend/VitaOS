@@ -10,7 +10,6 @@
 
 #include <vita/boot.h>
 #include <vita/hw.h>
-#include <vita/proposal.h>
 
 #ifdef VITA_HOSTED
 
@@ -288,49 +287,11 @@ bool audit_init_persistent_backend(const vita_handoff_t *handoff) {
     return true;
 }
 
-
-bool audit_persist_ai_proposal(const vita_ai_proposal_t *proposal) {
-    if (!proposal || !g_audit.persistent_ready || !g_audit.db) return false;
-    const char *sql = "INSERT INTO ai_proposal (proposal_id,boot_id,created_unix,proposal_type,summary,rationale,risk_level,benefit_level,requires_human_confirmation,status)"
-                      "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10);";
-    sqlite3_stmt *st = NULL;
-    if (sqlite3_prepare_v2(g_audit.db, sql, -1, &st, NULL) != SQLITE_OK) return false;
-    sqlite3_bind_text(st, 1, proposal->proposal_id, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 2, g_audit.boot_id, -1, SQLITE_STATIC);
-    sqlite3_bind_int64(st, 3, (sqlite3_int64)unix_now());
-    sqlite3_bind_text(st, 4, proposal->proposal_type, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 5, proposal->summary, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 6, proposal->rationale, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 7, proposal->risk_level, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 8, proposal->benefit_level, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(st, 9, proposal->requires_human_confirmation ? 1 : 0);
-    sqlite3_bind_text(st, 10, proposal->status, -1, SQLITE_TRANSIENT);
-    bool ok = sqlite3_step(st) == SQLITE_DONE;
-    sqlite3_finalize(st);
-    return ok;
-}
-
-bool audit_persist_human_response(const char *proposal_id, const char *response) {
-    if (!proposal_id || !response || !g_audit.persistent_ready || !g_audit.db) return false;
-    const char *sql = "INSERT INTO human_response (proposal_id,boot_id,response,operator_key,response_unix) VALUES (?1,?2,?3,'s/n',?4);";
-    sqlite3_stmt *st = NULL;
-    if (sqlite3_prepare_v2(g_audit.db, sql, -1, &st, NULL) != SQLITE_OK) return false;
-    sqlite3_bind_text(st, 1, proposal_id, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 2, g_audit.boot_id, -1, SQLITE_STATIC);
-    sqlite3_bind_text(st, 3, response, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(st, 4, (sqlite3_int64)unix_now());
-    bool ok = sqlite3_step(st) == SQLITE_DONE;
-    sqlite3_finalize(st);
-    return ok;
-}
-
 #else
 
 void audit_early_buffer_init(void) {}
 bool audit_init_persistent_backend(const vita_handoff_t *handoff) { (void)handoff; return false; }
 void audit_emit_boot_event(const char *event_type, const char *summary) { (void)event_type; (void)summary; }
 bool audit_persist_hardware_snapshot(const vita_hw_snapshot_t *snapshot) { (void)snapshot; return false; }
-bool audit_persist_ai_proposal(const vita_ai_proposal_t *proposal) { (void)proposal; return false; }
-bool audit_persist_human_response(const char *proposal_id, const char *response) { (void)proposal_id; (void)response; return false; }
 
 #endif
