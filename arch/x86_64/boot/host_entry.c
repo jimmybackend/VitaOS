@@ -27,7 +27,6 @@ int main(int argc, char **argv) {
     handoff.arch_name = "x86_64";
     handoff.firmware_type = VITA_FIRMWARE_HOSTED;
     handoff.audit_db_path = (argc > 1) ? argv[1] : "build/audit/vitaos-audit.db";
-    handoff.vitanet_seed_endpoint = (argc > 2) ? argv[2] : "127.0.0.1:47001";
 
     console_bind_writer(host_console_write);
     kmain(&handoff);

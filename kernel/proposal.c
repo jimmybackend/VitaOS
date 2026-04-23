@@ -5,7 +5,6 @@
 
 #include <vita/audit.h>
 #include <vita/console.h>
-#include <vita/node.h>
 #include <vita/proposal.h>
 
 #ifdef VITA_HOSTED
@@ -127,7 +126,7 @@ void proposal_generate_initial(const vita_handoff_t *handoff, const vita_hw_snap
     add_proposal(
         "inspect_cooperative_node_readiness",
         "Inspect cooperative node readiness / Revisar nodos cooperativos",
-        str_eq(mode, "hosted") ? "Boot mode hosted: validate node readiness status" : "UEFI mode: verify cooperative stack prerequisites",
+        str_eq(mode, "hosted") ? "Boot mode hosted: validate node readiness stubs" : "UEFI mode: verify cooperative stack prerequisites",
         "medium",
         "medium");
 
@@ -155,7 +154,6 @@ void proposal_show_all(void) {
         console_write_line(p->status);
         audit_emit_boot_event("AI_PROPOSAL_SHOWN", p->proposal_id);
     }
-    node_core_show_link_proposal();
 }
 
 static proposal_slot_t *find_by_id(const char *id) {
@@ -165,24 +163,10 @@ static proposal_slot_t *find_by_id(const char *id) {
     return 0;
 }
 
-int proposal_count_all(void) {
-    return g_count;
-}
-
-int proposal_count_pending(void) {
-    int pending = 0;
-    for (int i = 0; i < g_count; ++i) {
-        if (str_eq(g_proposals[i].status, "PENDING")) {
-            pending++;
-        }
-    }
-    return pending + node_core_pending_proposal_count();
-}
-
 bool proposal_handle_command(const char *line) {
     if (!line) return false;
 
-    if (starts_with(line, "list") || starts_with(line, "proposals")) {
+    if (starts_with(line, "list")) {
         proposal_show_all();
         return true;
     }
@@ -191,12 +175,6 @@ bool proposal_handle_command(const char *line) {
         const char *id = line + 8;
         proposal_slot_t *p = find_by_id(id);
         if (!p) {
-            if (node_core_handle_link_response(id, true)) {
-                audit_persist_human_response(id, "approve");
-                audit_emit_boot_event("AI_PROPOSAL_APPROVED", id);
-                console_write_line("approved");
-                return true;
-            }
             console_write_line("proposal id not found");
             return true;
         }
@@ -211,12 +189,6 @@ bool proposal_handle_command(const char *line) {
         const char *id = line + 7;
         proposal_slot_t *p = find_by_id(id);
         if (!p) {
-            if (node_core_handle_link_response(id, false)) {
-                audit_persist_human_response(id, "reject");
-                audit_emit_boot_event("AI_PROPOSAL_REJECTED", id);
-                console_write_line("rejected");
-                return true;
-            }
             console_write_line("proposal id not found");
             return true;
         }
@@ -229,7 +201,7 @@ bool proposal_handle_command(const char *line) {
 
 #ifdef VITA_HOSTED
     if (starts_with(line, "help")) {
-        console_write_line("commands: status | hw | audit | peers | tasks | tasks pending | replicate | proposals | emergency | helpme | approve <id> | reject <id> | shutdown");
+        console_write_line("commands: list | approve <id> | reject <id> | exit");
         return true;
     }
 #endif

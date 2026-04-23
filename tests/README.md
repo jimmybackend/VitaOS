@@ -4,17 +4,16 @@
 
 `tools/test/smoke-boot.sh` valida banner de arranque cuando QEMU/OVMF están disponibles.
 
-## Smoke test de auditoría + VitaNet F1B (tasks + replicación)
+## Smoke test de auditoría persistente (SQLite)
 
 `tools/test/smoke-audit.sh` valida:
-- DB de nodo A y DB de peer B (harness);
-- descubrimiento/persistencia de peers en `node_peer`;
-- propuesta de enlace + approve;
-- uso real de `node_task` con `peer_status_request` y `audit_replicate_range`;
-- transición de estados (`created/sent/accepted/done`);
-- replicación mínima bidireccional de auditoría (`AUDIT_BLOCK` ida/vuelta);
-- importación deduplicada (`AUDIT_REPL_IMPORTED`);
-- trazabilidad de eventos de tarea/replicación.
+- creación de DB;
+- creación de `boot_session`;
+- inserción de `audit_event` iniciales;
+- continuidad de `event_seq`;
+- continuidad de `prev_hash`;
+- recomputación de `event_hash`.
+- inserción de `hardware_snapshot` con `ram_bytes` > 0.
 
 Ejecución:
 
