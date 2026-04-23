@@ -1,0 +1,20 @@
+{
+  "pack_id": "es.first_aid.basic.v1",
+  "name": "Primeros auxilios básicos",
+  "version": "1.0.0",
+  "lang": "es",
+  "topic": "primeros_auxilios_basicos",
+  "source": "manual_interno_vitaos",
+  "items": [
+    {
+      "id": "es-fa-001",
+      "title": "Evaluación inicial",
+      "summary": "Verifica seguridad de la escena, respuesta, respiración y hemorragias visibles."
+    },
+    {
+      "id": "es-fa-002",
+      "title": "Hemorragia externa",
+      "summary": "Aplicar presión directa, elevar si es seguro y pedir ayuda."
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "pack_id": "en.first_aid.basic.v1",
+  "name": "Basic first aid",
+  "version": "1.0.0",
+  "lang": "en",
+  "topic": "basic_first_aid",
+  "source": "vitaos_internal_manual",
+  "items": [
+    {
+      "id": "en-fa-001",
+      "title": "Initial assessment",
+      "summary": "Check scene safety, responsiveness, breathing and visible bleeding."
+    },
+    {
+      "id": "en-fa-002",
+      "title": "External bleeding",
+      "summary": "Apply direct pressure, elevate if safe and seek help."
+    }
+  ]
+}
