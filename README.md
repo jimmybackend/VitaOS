@@ -104,13 +104,6 @@ Salida esperada:
 make run
 ```
 
-### Hosted runner (validación SQLite)
-
-```bash
-make hosted
-./build/hosted/vitaos-hosted build/audit/vitaos-audit.db
-```
-
 ### Smoke test
 
 ```bash
@@ -138,7 +131,6 @@ Verificación manual:
 ```bash
 sqlite3 build/audit/vitaos-audit.db "select boot_id, arch, boot_unix from boot_session;"
 sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, event_hash from audit_event order by id;"
-# eventos esperados incluyen BOOT/HANDOFF/CONSOLE/AUDIT/HW_DISCOVERY/HW_SNAPSHOT
 ```
 
 

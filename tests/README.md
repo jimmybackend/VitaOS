@@ -12,7 +12,7 @@
 - inserción de `audit_event` iniciales;
 - continuidad de `event_seq`;
 - continuidad de `prev_hash`;
-- recomputación de `event_hash`;
+- recomputación de `event_hash`.
 - inserción de `hardware_snapshot` con `ram_bytes` > 0.
 
 Ejecución:
