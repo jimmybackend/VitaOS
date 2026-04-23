@@ -6,5 +6,6 @@ Archivos sugeridos:
 - `boot-flow.md`
 - `ai-core.md`
 - `kernel-layout.md`
+- `hardware-discovery.md`
 
 Toda decisión de implementación que altere el boot, estados, contratos del kernel o flujo de control debe reflejarse aquí.

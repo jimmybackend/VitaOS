@@ -1,35 +1,51 @@
-# Boot Flow — VitaOS con IA
+# Boot Flow — VitaOS con IA (vertical slice F1A)
 
 ## Objetivo
 
-Documentar el flujo de arranque base para F1A en x86_64 UEFI.
+Definir un camino ejecutable y reproducible desde boot hasta `kmain()`, con auditoría persistente mínima funcional validable.
 
-## Flujo
+## Flujo implementado
 
-1. Firmware UEFI entrega control al boot stage.
-2. El boot stage prepara memoria mínima, stack y handoff structure.
-3. Se invoca `kmain()`.
-4. `kmain()` inicia consola temprana.
-5. Se inicializa reloj monotónico.
-6. Se ejecuta `memory_early_init()`.
-7. Se crea el contexto de boot (`boot_context_t`).
-8. Se entra a `HW_DISCOVERY`.
-9. Se busca el destino de auditoría.
-10. Si SQLite abre correctamente:
-   - se registra `BOOT_OK`;
-   - el sistema pasa a `OPERATIONAL`.
-11. Si no abre:
-   - se registra en buffer temporal;
-   - el sistema pasa a `RESTRICTED_DIAGNOSTIC`.
+1. UEFI carga `EFI/BOOT/BOOTX64.EFI` (ruta UEFI actual).
+2. El boot stage construye `vita_handoff_t` con contrato explícito.
+3. El boot stage invoca `kmain(&handoff)`.
+4. `kmain()` valida handoff y emite eventos tempranos en buffer.
+5. `kmain()` inicializa backend persistente de auditoría.
+6. Si auditoría falla: panic y modo no-operativo.
+7. Si auditoría está lista:
+   - aplica esquema SQL;
+   - crea `boot_session`;
+   - flushea eventos tempranos;
+   - emite `AUDIT_BACKEND_READY`;
+   - muestra banner.
 
-## Contratos
+## Contrato de handoff
 
-- Ningún subsistema debe asumir almacenamiento persistente antes de `audit_init()`.
-- La consola temprana debe estar disponible antes de fallos críticos.
-- El boot stage no debe codificar políticas de negocio; solo preparar el handoff.
+Archivo: `include/vita/boot.h`
 
-## Tareas de implementación
+```c
+typedef struct {
+    uint64_t magic;
+    uint32_t version;
+    uint32_t size;
 
-- Definir `boot_context_t`.
-- Definir `arch/x86_64/boot/` con loader mínimo.
-- Definir salida por framebuffer o consola serial temprana.
+    const char *arch_name;
+    uint64_t firmware_type;
+    const char *audit_db_path;
+
+    void *uefi_image_handle;
+    void *uefi_system_table;
+} vita_handoff_t;
+```
+
+## Build y validación reproducible
+
+- `make` (artefacto UEFI)
+- `make hosted` (runner hosted para validar SQLite)
+- `make smoke` (smoke de banner en QEMU cuando disponible)
+- `make smoke-audit` (creación/validación de DB y hash chain)
+
+## Nota de alcance
+
+- SQLite persistente funcional está validado en flujo hosted F1A.
+- La ruta UEFI mantiene la compacidad freestanding mientras se completa la integración VFS de almacenamiento writable para firmware.
