@@ -1,4 +1,4 @@
-CREATE TABLE boot_session (
+CREATE TABLE IF NOT EXISTS boot_session (
     boot_id TEXT PRIMARY KEY,
     node_id TEXT NOT NULL,
     arch TEXT NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE boot_session (
     language_mode TEXT NOT NULL DEFAULT 'es,en'
 );
 
-CREATE TABLE hardware_snapshot (
+CREATE TABLE IF NOT EXISTS hardware_snapshot (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     boot_id TEXT NOT NULL,
     cpu_arch TEXT,
@@ -25,7 +25,7 @@ CREATE TABLE hardware_snapshot (
     FOREIGN KEY (boot_id) REFERENCES boot_session(boot_id)
 );
 
-CREATE TABLE audit_event (
+CREATE TABLE IF NOT EXISTS audit_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     boot_id TEXT NOT NULL,
     event_seq INTEGER NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE audit_event (
     FOREIGN KEY (boot_id) REFERENCES boot_session(boot_id)
 );
 
-CREATE TABLE ai_proposal (
+CREATE TABLE IF NOT EXISTS ai_proposal (
     proposal_id TEXT PRIMARY KEY,
     boot_id TEXT NOT NULL,
     created_unix INTEGER NOT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE ai_proposal (
     FOREIGN KEY (boot_id) REFERENCES boot_session(boot_id)
 );
 
-CREATE TABLE human_response (
+CREATE TABLE IF NOT EXISTS human_response (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     proposal_id TEXT NOT NULL,
     boot_id TEXT NOT NULL,
@@ -69,7 +69,7 @@ CREATE TABLE human_response (
     FOREIGN KEY (boot_id) REFERENCES boot_session(boot_id)
 );
 
-CREATE TABLE node_peer (
+CREATE TABLE IF NOT EXISTS node_peer (
     peer_id TEXT PRIMARY KEY,
     first_seen_unix INTEGER NOT NULL,
     last_seen_unix INTEGER NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE node_peer (
     link_state TEXT NOT NULL DEFAULT 'discovered'
 );
 
-CREATE TABLE node_task (
+CREATE TABLE IF NOT EXISTS node_task (
     task_id TEXT PRIMARY KEY,
     origin_node_id TEXT NOT NULL,
     target_node_id TEXT NOT NULL,
@@ -90,7 +90,7 @@ CREATE TABLE node_task (
     payload_json TEXT
 );
 
-CREATE TABLE knowledge_pack (
+CREATE TABLE IF NOT EXISTS knowledge_pack (
     pack_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     version TEXT NOT NULL,
@@ -99,3 +99,21 @@ CREATE TABLE knowledge_pack (
     source_hash TEXT NOT NULL,
     loaded_unix INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_hardware_snapshot_boot_id
+    ON hardware_snapshot(boot_id);
+
+CREATE INDEX IF NOT EXISTS idx_audit_event_boot_seq
+    ON audit_event(boot_id, event_seq);
+
+CREATE INDEX IF NOT EXISTS idx_ai_proposal_boot_id
+    ON ai_proposal(boot_id);
+
+CREATE INDEX IF NOT EXISTS idx_human_response_proposal_id
+    ON human_response(proposal_id);
+
+CREATE INDEX IF NOT EXISTS idx_human_response_boot_id
+    ON human_response(boot_id);
+
+CREATE INDEX IF NOT EXISTS idx_node_peer_last_seen
+    ON node_peer(last_seen_unix);
