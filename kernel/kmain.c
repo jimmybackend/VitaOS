@@ -1,109 +1,92 @@
 /*
  * kernel/kmain.c
- * Entry point for VitaOS common kernel.
- *
- * Responsibilities:
- * - initialize early console
- * - create boot context
- * - drive the state machine
- * - require persistent audit before full operation
- *
- * This file is intentionally a guided skeleton for Codex and contributors.
+ * First executable vertical slice entry + audit gate.
  */
 
-#include <stdint.h>
 #include <stdbool.h>
 
-typedef enum {
-    VITA_STATE_BOOTSTRAP = 0,
-    VITA_STATE_HW_DISCOVERY,
-    VITA_STATE_AUDIT_REQUIRED,
-    VITA_STATE_RESTRICTED_DIAGNOSTIC,
-    VITA_STATE_OPERATIONAL,
-    VITA_STATE_COOPERATIVE
-} vita_state_t;
+#include <vita/audit.h>
+#include <vita/boot.h>
+#include <vita/console.h>
+#include <vita/hw.h>
+#include <vita/proposal.h>
 
-typedef struct {
-    const char *arch_name;
-    uint64_t ram_bytes;
-    bool early_console_ready;
-    bool audit_ready;
-    bool network_ready;
-    bool peers_present;
-} boot_context_t;
-
-/* External subsystem entry points. */
-void console_early_init(void);
-void console_banner(const boot_context_t *ctx);
 void panic_fatal(const char *reason);
 
-void memory_early_init(void);
-void scheduler_init(void);
-
-void audit_early_buffer_init(void);
-bool audit_init_persistent_backend(const boot_context_t *ctx);
-void audit_emit_boot_event(const char *event_type, const char *summary);
-
-void ai_core_init(const boot_context_t *ctx);
-void proposal_seed_initial_set(const boot_context_t *ctx);
-
-void node_core_init(const boot_context_t *ctx);
-bool node_core_has_peers(void);
-
-static void detect_basic_hardware(boot_context_t *ctx) {
-    /* TODO: replace placeholders with real x86_64/arm64 discovery hooks. */
-    ctx->arch_name = "x86_64";
-    ctx->ram_bytes = 0;
-    ctx->network_ready = false;
-    ctx->peers_present = false;
+static void mem_zero(void *ptr, unsigned long n) {
+    unsigned char *p = (unsigned char *)ptr;
+    for (unsigned long i = 0; i < n; ++i) p[i] = 0;
 }
 
-void kmain(void) {
-    boot_context_t ctx = {0};
+static bool handoff_valid(const vita_handoff_t *handoff) {
+    if (!handoff) {
+        return false;
+    }
+    if (handoff->magic != VITA_BOOT_MAGIC) {
+        return false;
+    }
+    if (handoff->size < sizeof(vita_handoff_t)) {
+        return false;
+    }
+    return true;
+}
+
+void kmain(const vita_handoff_t *handoff) {
+    vita_boot_status_t status;
+    vita_hw_snapshot_t hw;
+    bool ai_core_online = false;
+
+    mem_zero(&status, sizeof(status));
+    mem_zero(&hw, sizeof(hw));
+    status.arch_name = "x86_64";
+    status.console_ready = true;
+    status.audit_ready = false;
 
     console_early_init();
-    ctx.early_console_ready = true;
-
     audit_early_buffer_init();
-    audit_emit_boot_event("BOOT_START", "VitaOS kernel entry");
+    audit_emit_boot_event("BOOT_STARTED", "boot started");
 
-    memory_early_init();
-    scheduler_init();
-    detect_basic_hardware(&ctx);
-
-    audit_emit_boot_event("HW_DISCOVERY_START", "Beginning hardware discovery");
-
-    if (!audit_init_persistent_backend(&ctx)) {
-        ctx.audit_ready = false;
-        audit_emit_boot_event("AUDIT_MISSING", "Persistent audit backend not available");
-        console_banner(&ctx);
-        panic_fatal("audit backend required for full operation");
+    if (!handoff_valid(handoff)) {
+        panic_fatal("invalid boot handoff");
         return;
     }
 
-    ctx.audit_ready = true;
-    audit_emit_boot_event("AUDIT_READY", "Persistent audit backend initialized");
+    audit_emit_boot_event("HANDOFF_TO_KMAIN", "handoff to kmain");
+    audit_emit_boot_event("CONSOLE_READY", "console ready");
 
-    ai_core_init(&ctx);
-    node_core_init(&ctx);
-
-    ctx.peers_present = node_core_has_peers();
-    proposal_seed_initial_set(&ctx);
-
-    if (ctx.peers_present) {
-        audit_emit_boot_event("STATE_COOPERATIVE", "Peers detected during boot");
-    } else {
-        audit_emit_boot_event("STATE_OPERATIONAL", "System entered operational mode");
+    if (handoff->arch_name) {
+        status.arch_name = handoff->arch_name;
     }
 
-    console_banner(&ctx);
+    if (!audit_init_persistent_backend(handoff)) {
+        console_write_line("Audit: FAILED");
+        panic_fatal("persistent audit backend required");
+        return;
+    }
 
-    /* TODO:
-     * - enter guided console loop
-     * - dispatch commands
-     * - hand off to emergency_core for free-text requests
-     */
+    status.audit_ready = true;
+    audit_emit_boot_event("AUDIT_BACKEND_READY", "audit backend ready");
+
+    audit_emit_boot_event("HW_DISCOVERY_STARTED", "hardware discovery started");
+    if (hw_discovery_run(handoff, &hw)) {
+        audit_emit_boot_event("HW_DISCOVERY_COMPLETED", "hardware discovery completed");
+        if (audit_persist_hardware_snapshot(&hw)) {
+            audit_emit_boot_event("HW_SNAPSHOT_PERSISTED", "hardware snapshot persisted");
+        }
+    }
+
+    proposal_generate_initial(handoff, &hw, status.audit_ready);
+    ai_core_online = true;
+
+    console_banner(&status);
+    console_show_guided_welcome(handoff, &status, &hw, ai_core_online);
+
+    if (handoff->firmware_type == VITA_FIRMWARE_HOSTED) {
+        console_guided_hosted_loop(handoff, &status, &hw, ai_core_online);
+        return;
+    }
+
     for (;;) {
-        /* idle loop */
+        __asm__ __volatile__("hlt");
     }
 }

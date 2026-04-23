@@ -1,52 +1,48 @@
-# AI Core — VitaOS con IA
+# AI Core — MVP F1A
 
-## Definición
+## Enfoque
 
-La IA de VitaOS F1 no es un LLM genérico dentro del kernel. Es un núcleo de decisión residente compuesto por:
+Motor residente simple (sin LLM pesado):
 
-- percepción;
-- evaluación;
-- propuesta;
-- coordinación.
+1. Percepción: usa estado real (`audit_ready`, `hardware_snapshot`, modo boot).
+2. Evaluación: clasifica riesgo/beneficio y necesidad de confirmación humana.
+3. Propuesta estructurada: genera propuestas bilingües en formato operativo.
+4. Persistencia: guarda en `ai_proposal`.
+5. Presentación: imprime propuestas en consola.
+6. Respuesta humana: `approve <id>` / `reject <id>`.
+7. Auditoría: emite eventos y persiste `human_response`.
 
-## Entradas
+## Tipos iniciales
 
-- estado del sistema;
-- hardware detectado;
-- estado de auditoría;
-- peers;
-- tipo de sesión;
-- comandos del usuario;
-- knowledge packs cargados.
+- `review_hardware_status`
+- `review_audit_status`
+- `enter_guided_emergency_mode`
+- `inspect_cooperative_node_readiness`
 
-## Salidas
+## Eventos de auditoría
 
-- propuestas visibles;
-- preguntas críticas;
-- acciones sugeridas;
-- registros en auditoría;
-- solicitudes a VitaNet;
-- cambios de prioridad.
+- `AI_PROPOSAL_CREATED`
+- `AI_PROPOSAL_SHOWN`
+- `AI_PROPOSAL_APPROVED`
+- `AI_PROPOSAL_REJECTED`
 
-## Formato operativo esperado
+## Comandos de consola guiada (hosted)
 
-1. resumen entendido
-2. riesgos inmediatos
-3. preguntas críticas
-4. acciones inmediatas sugeridas
-5. recursos disponibles
-6. propuesta del sistema
-7. estado de auditoría
+- `status`
+- `hw`
+- `audit`
+- `proposals` (o `list`)
+- `peers`
+- `helpme`
+- `emergency <texto libre>`
+- `approve <id>`
+- `reject <id>`
+- `shutdown`
 
-## Restricciones
+## Smoke test
 
-- No debe inventar capacidades del hardware.
-- No debe ejecutar acciones críticas sin canal explícito definido.
-- Toda propuesta debe dejar rastro en `ai_proposal`.
-- Toda respuesta humana asociada debe dejar rastro en `human_response`.
+```bash
+make smoke-audit
+```
 
-## Tareas para Codex
-
-- diseñar estructuras `ai_context_t`, `ai_observation_t`, `ai_proposal_t`;
-- enlazar `ai_core.c` con `proposal.c`, `audit_core.c`, `node_core.c` y `emergency_core.c`;
-- mantener salida bilingüe simple.
+Valida que existan filas en `ai_proposal` y `human_response`, además del rastro en `audit_event`.
