@@ -18,12 +18,26 @@ typedef uint16_t char16_t;
 typedef struct efi_simple_text_output_protocol efi_simple_text_output_protocol_t;
 
 typedef struct {
-    char _pad1[44];
+    uint64_t signature;
+    uint32_t revision;
+    uint32_t header_size;
+    uint32_t crc32;
+    uint32_t reserved;
+} efi_table_header_t;
+
+typedef struct {
+    efi_table_header_t hdr;
+    char16_t *firmware_vendor;
+    uint32_t firmware_revision;
+    uint32_t _pad0;
+    efi_handle_t console_in_handle;
+    void *con_in;
+    efi_handle_t console_out_handle;
     efi_simple_text_output_protocol_t *con_out;
 } efi_system_table_t;
 
 struct efi_simple_text_output_protocol {
-    char _pad1[8];
+    efi_status_t (*reset)(efi_simple_text_output_protocol_t *self, uint8_t extended_verification);
     efi_status_t (*output_string)(efi_simple_text_output_protocol_t *self, char16_t *string);
 };
 
