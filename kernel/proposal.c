@@ -5,6 +5,7 @@
 
 #include <vita/audit.h>
 #include <vita/console.h>
+#include <vita/node.h>
 #include <vita/proposal.h>
 
 #ifdef VITA_HOSTED
@@ -233,6 +234,13 @@ bool proposal_handle_command(const char *line) {
 
     if (starts_with(line, "approve ")) {
         id = line + 8;
+
+        if (node_core_handle_link_response(id, true)) {
+            audit_persist_human_response(id, "approve");
+            console_write_line("approved");
+            return true;
+        }
+
         p = find_by_id(id);
         if (!p) {
             console_write_line("proposal id not found");
@@ -248,6 +256,13 @@ bool proposal_handle_command(const char *line) {
 
     if (starts_with(line, "reject ")) {
         id = line + 7;
+
+        if (node_core_handle_link_response(id, false)) {
+            audit_persist_human_response(id, "reject");
+            console_write_line("rejected");
+            return true;
+        }
+
         p = find_by_id(id);
         if (!p) {
             console_write_line("proposal id not found");
