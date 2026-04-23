@@ -8,16 +8,44 @@ Sin auditoría persistente válida, VitaOS no entra en modo operativo completo.
 
 `schema/audit.sql` es el contrato canónico del modelo de auditoría.
 
-## Objetos principales
+## Implementación mínima funcional (F1A actual)
 
-- `boot_session`
-- `hardware_snapshot`
-- `audit_event`
-- `ai_proposal`
-- `human_response`
-- `node_peer`
-- `node_task`
-- `knowledge_pack`
+Para el slice actual, el backend persistente usa SQLite en flujo hosted de validación.
+
+- DB por defecto: `build/audit/vitaos-audit.db`
+- Esquema aplicado automáticamente desde `schema/audit.sql` al iniciar.
+- Cada boot persistente crea:
+  - 1 fila en `boot_session`
+  - eventos iniciales en `audit_event` con hash chain
+
+Eventos iniciales esperados:
+1. `BOOT_STARTED`
+2. `HANDOFF_TO_KMAIN`
+3. `CONSOLE_READY`
+4. `AUDIT_BACKEND_READY`
+5. `HW_DISCOVERY_STARTED`
+6. `HW_DISCOVERY_COMPLETED`
+7. `HW_SNAPSHOT_PERSISTED`
+8. `GUIDED_CONSOLE_SHOWN`
+9. `MENU_OPTION_SELECTED`
+10. `EMERGENCY_SESSION_STARTED`
+11. `EMERGENCY_INPUT_RECEIVED`
+12. `STRUCTURED_RESPONSE_SHOWN`
+13. `VITANET_STARTED`
+14. `PEER_DISCOVERED`
+15. `PEER_CAPABILITIES_RECEIVED`
+16. `LINK_PROPOSAL_CREATED`
+17. `LINK_ACCEPTED` / `LINK_REJECTED`
+18. `HEARTBEAT_RECEIVED`
+19. `AUDIT_REPLICATION_ATTEMPTED`
+20. `NODE_TASK_CREATED`
+21. `NODE_TASK_SENT`
+22. `NODE_TASK_ACCEPTED`
+23. `NODE_TASK_REJECTED`
+24. `NODE_TASK_COMPLETED`
+25. `PEER_STATUS_REQUESTED`
+26. `PEER_STATUS_RECEIVED`
+27. `AUDIT_REPL_IMPORTED`
 
 ## Reglas
 
@@ -30,15 +58,30 @@ Sin auditoría persistente válida, VitaOS no entra en modo operativo completo.
 
 ## Integridad
 
-Cada evento debe calcular `event_hash` y enlazarse al `prev_hash`.
+Cada evento calcula `event_hash` con encadenamiento sobre `prev_hash`.
 
-## Exportación
+Payload actual del hash:
 
-F1 puede exportar:
-- SQL dump
-- JSONL
-- snapshot resumido para análisis externo
+`boot_id || event_seq || event_type || severity || actor_type || summary || details_json || monotonic_ns || prev_hash`
 
-## Decisión de diseño
+## Validación mínima reproducible
 
-Aunque SQLite es el backend, el modelo sigue siendo append-mostly.
+```bash
+make smoke-audit
+```
+
+El smoke test valida:
+- existencia de `boot_session`;
+- existencia de `audit_event` iniciales;
+- `hardware_snapshot` persistido;
+- continuidad de `event_seq`;
+- continuidad de `prev_hash`;
+- recomputación de `event_hash`.
+
+## Inspección manual rápida
+
+```bash
+sqlite3 build/audit/vitaos-audit.db "select boot_id, arch, boot_unix from boot_session;"
+sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, event_hash from audit_event order by id;"
+sqlite3 build/audit/vitaos-audit.db "select cpu_arch,cpu_model,ram_bytes,firmware_type,console_type,net_count,storage_count,usb_count,wifi_count from hardware_snapshot order by id desc limit 1;"
+```
