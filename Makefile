@@ -13,7 +13,7 @@ EFI_LDFLAGS := -target x86_64-unknown-windows -fuse-ld=lld -nostdlib -Wl,/subsys
 HOSTED_CFLAGS := -Wall -Wextra -Werror -Iinclude -DVITA_HOSTED
 HOSTED_LDFLAGS := -lsqlite3
 
-COMMON_KERNEL := kernel/kmain.c kernel/console.c kernel/panic.c kernel/audit_core.c kernel/hardware_discovery.c kernel/proposal.c kernel/node_core.c
+COMMON_KERNEL := kernel/kmain.c kernel/console.c kernel/panic.c kernel/audit_core.c kernel/hardware_discovery.c
 EFI_SOURCES := arch/x86_64/boot/uefi_entry.c $(COMMON_KERNEL)
 HOSTED_SOURCES := arch/x86_64/boot/host_entry.c $(COMMON_KERNEL)
 

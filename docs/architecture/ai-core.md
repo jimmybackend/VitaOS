@@ -26,18 +26,12 @@ Motor residente simple (sin LLM pesado):
 - `AI_PROPOSAL_APPROVED`
 - `AI_PROPOSAL_REJECTED`
 
-## Comandos de consola guiada (hosted)
+## Comandos de consola (hosted)
 
-- `status`
-- `hw`
-- `audit`
-- `proposals` (o `list`)
-- `peers`
-- `helpme`
-- `emergency <texto libre>`
+- `list`
 - `approve <id>`
 - `reject <id>`
-- `shutdown`
+- `exit`
 
 ## Smoke test
 

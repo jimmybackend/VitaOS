@@ -8,10 +8,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include <vita/audit.h>
 #include <vita/boot.h>
 #include <vita/hw.h>
-#include <vita/proposal.h>
 
 #ifdef VITA_HOSTED
 
@@ -289,122 +287,11 @@ bool audit_init_persistent_backend(const vita_handoff_t *handoff) {
     return true;
 }
 
-
-bool audit_persist_ai_proposal(const vita_ai_proposal_t *proposal) {
-    if (!proposal || !g_audit.persistent_ready || !g_audit.db) return false;
-    const char *sql = "INSERT INTO ai_proposal (proposal_id,boot_id,created_unix,proposal_type,summary,rationale,risk_level,benefit_level,requires_human_confirmation,status)"
-                      "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10);";
-    sqlite3_stmt *st = NULL;
-    if (sqlite3_prepare_v2(g_audit.db, sql, -1, &st, NULL) != SQLITE_OK) return false;
-    sqlite3_bind_text(st, 1, proposal->proposal_id, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 2, g_audit.boot_id, -1, SQLITE_STATIC);
-    sqlite3_bind_int64(st, 3, (sqlite3_int64)unix_now());
-    sqlite3_bind_text(st, 4, proposal->proposal_type, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 5, proposal->summary, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 6, proposal->rationale, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 7, proposal->risk_level, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 8, proposal->benefit_level, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(st, 9, proposal->requires_human_confirmation ? 1 : 0);
-    sqlite3_bind_text(st, 10, proposal->status, -1, SQLITE_TRANSIENT);
-    bool ok = sqlite3_step(st) == SQLITE_DONE;
-    sqlite3_finalize(st);
-    return ok;
-}
-
-bool audit_persist_human_response(const char *proposal_id, const char *response) {
-    if (!proposal_id || !response || !g_audit.persistent_ready || !g_audit.db) return false;
-    const char *sql = "INSERT INTO human_response (proposal_id,boot_id,response,operator_key,response_unix) VALUES (?1,?2,?3,'s/n',?4);";
-    sqlite3_stmt *st = NULL;
-    if (sqlite3_prepare_v2(g_audit.db, sql, -1, &st, NULL) != SQLITE_OK) return false;
-    sqlite3_bind_text(st, 1, proposal_id, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 2, g_audit.boot_id, -1, SQLITE_STATIC);
-    sqlite3_bind_text(st, 3, response, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(st, 4, (sqlite3_int64)unix_now());
-    bool ok = sqlite3_step(st) == SQLITE_DONE;
-    sqlite3_finalize(st);
-    return ok;
-}
-
-
-bool audit_upsert_node_peer(const vita_node_peer_t *peer) {
-    const char *sql = "INSERT INTO node_peer (peer_id,first_seen_unix,last_seen_unix,transport,capabilities_json,trust_state,link_state)"
-                      "VALUES (?1,?2,?3,?4,?5,?6,?7)"
-                      "ON CONFLICT(peer_id) DO UPDATE SET "
-                      "last_seen_unix=excluded.last_seen_unix,transport=excluded.transport,capabilities_json=excluded.capabilities_json,"
-                      "trust_state=excluded.trust_state,link_state=excluded.link_state;";
-    sqlite3_stmt *st = NULL;
-    if (!peer || !g_audit.persistent_ready || !g_audit.db) return false;
-    if (sqlite3_prepare_v2(g_audit.db, sql, -1, &st, NULL) != SQLITE_OK) return false;
-    sqlite3_bind_text(st, 1, peer->peer_id, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(st, 2, (sqlite3_int64)peer->first_seen_unix);
-    sqlite3_bind_int64(st, 3, (sqlite3_int64)peer->last_seen_unix);
-    sqlite3_bind_text(st, 4, peer->transport, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 5, peer->capabilities_json, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 6, peer->trust_state, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 7, peer->link_state, -1, SQLITE_TRANSIENT);
-    {
-        bool ok = sqlite3_step(st) == SQLITE_DONE;
-        sqlite3_finalize(st);
-        return ok;
-    }
-}
-
-bool audit_export_recent_event_block(char *out, size_t out_cap) {
-    const char *sql = "SELECT event_seq,event_type,event_hash FROM audit_event WHERE boot_id=?1 ORDER BY id DESC LIMIT 3;";
-    sqlite3_stmt *st = NULL;
-    int rc;
-    size_t used = 0;
-    int row_count = 0;
-    if (!out || out_cap < 4 || !g_audit.persistent_ready || !g_audit.db) return false;
-    out[0] = '\0';
-    if (sqlite3_prepare_v2(g_audit.db, sql, -1, &st, NULL) != SQLITE_OK) return false;
-    sqlite3_bind_text(st, 1, g_audit.boot_id, -1, SQLITE_STATIC);
-
-    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
-        sqlite3_int64 seq = sqlite3_column_int64(st, 0);
-        const char *etype = (const char *)sqlite3_column_text(st, 1);
-        const char *ehash = (const char *)sqlite3_column_text(st, 2);
-        char row[256];
-        int w = snprintf(row, sizeof(row), "%s%lld:%s:%s", row_count ? ";" : "", (long long)seq,
-                         etype ? etype : "", ehash ? ehash : "");
-        if (w <= 0 || used + (size_t)w + 1 >= out_cap) break;
-        memcpy(out + used, row, (size_t)w);
-        used += (size_t)w;
-        out[used] = '\0';
-        row_count++;
-    }
-    sqlite3_finalize(st);
-    return row_count > 0;
-}
-
-void audit_get_runtime(vita_audit_runtime_t *out_runtime) {
-    if (!out_runtime) {
-        return;
-    }
-    out_runtime->persistent_ready = g_audit.persistent_ready;
-    out_runtime->event_seq = g_audit.event_seq;
-    out_runtime->boot_id = g_audit.boot_id;
-}
-
-
-
 #else
 
 void audit_early_buffer_init(void) {}
 bool audit_init_persistent_backend(const vita_handoff_t *handoff) { (void)handoff; return false; }
 void audit_emit_boot_event(const char *event_type, const char *summary) { (void)event_type; (void)summary; }
 bool audit_persist_hardware_snapshot(const vita_hw_snapshot_t *snapshot) { (void)snapshot; return false; }
-bool audit_persist_ai_proposal(const vita_ai_proposal_t *proposal) { (void)proposal; return false; }
-bool audit_persist_human_response(const char *proposal_id, const char *response) { (void)proposal_id; (void)response; return false; }
-bool audit_upsert_node_peer(const vita_node_peer_t *peer) { (void)peer; return false; }
-bool audit_export_recent_event_block(char *out, size_t out_cap) { if (out && out_cap) out[0] = '\0'; return false; }
-void audit_get_runtime(vita_audit_runtime_t *out_runtime) {
-    if (!out_runtime) {
-        return;
-    }
-    out_runtime->persistent_ready = false;
-    out_runtime->event_seq = 0;
-    out_runtime->boot_id = "";
-}
 
 #endif

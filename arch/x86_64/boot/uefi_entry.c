@@ -72,7 +72,6 @@ efi_status_t efi_main(efi_handle_t image_handle, efi_system_table_t *system_tabl
     handoff.arch_name = "x86_64";
     handoff.firmware_type = VITA_FIRMWARE_UEFI;
     handoff.audit_db_path = 0;
-    handoff.vitanet_seed_endpoint = 0;
     handoff.uefi_image_handle = image_handle;
     handoff.uefi_system_table = system_table;
 

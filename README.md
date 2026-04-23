@@ -105,13 +105,6 @@ Salida esperada:
 make run
 ```
 
-### Hosted runner (validación SQLite)
-
-```bash
-make hosted
-./build/hosted/vitaos-hosted build/audit/vitaos-audit.db 127.0.0.1:47001
-```
-
 ### Smoke test
 
 ```bash
@@ -139,7 +132,6 @@ Verificación manual:
 ```bash
 sqlite3 build/audit/vitaos-audit.db "select boot_id, arch, boot_unix from boot_session;"
 sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, event_hash from audit_event order by id;"
-# eventos esperados incluyen BOOT/HANDOFF/CONSOLE/AUDIT/HW_DISCOVERY/HW_SNAPSHOT
 ```
 
 
@@ -148,47 +140,3 @@ sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, ev
 ```bash
 sqlite3 build/audit/vitaos-audit.db "select cpu_arch,cpu_model,ram_bytes,firmware_type,console_type,net_count,storage_count,usb_count,wifi_count from hardware_snapshot order by id desc limit 1;"
 ```
-
-
-### Consola guiada bilingüe + VitaNet v0 (hosted)
-
-Al iniciar en hosted, VitaOS entra a la experiencia principal guiada y auditada.
-
-Comandos base:
-- `status`
-- `hw`
-- `audit`
-- `proposals` (o `list`)
-- `peers`
-- `helpme`
-- `emergency <texto libre>`
-- `approve <id>`
-- `reject <id>`
-- `shutdown`
-
-Para probar VitaNet v0, levanta el peer de prueba y ejecuta el hosted runner con endpoint seed:
-
-```bash
-python3 tools/test/vitanet-peer.py 127.0.0.1:47001
-./build/hosted/vitaos-hosted build/audit/vitaos-audit.db 127.0.0.1:47001
-```
-
-Ejemplo reproducible completo:
-
-```bash
-make smoke-audit
-```
-
-Verificación rápida de peers:
-
-```bash
-sqlite3 build/audit/vitaos-audit.db "select peer_id,first_seen_unix,last_seen_unix,transport,trust_state,link_state from node_peer;"
-```
-
-Eventos VitaNet esperados en auditoría: `VITANET_STARTED`, `PEER_DISCOVERED`, `PEER_CAPABILITIES_RECEIVED`, `LINK_PROPOSAL_CREATED`, `LINK_ACCEPTED/LINK_REJECTED`, `HEARTBEAT_RECEIVED`, `AUDIT_REPLICATION_ATTEMPTED`.
-
-Documentación de flujo de emergencia:
-- `docs/console/emergency-flow.md`
-
-Documentación VitaNet v0:
-- `docs/network/vitanet-v0.md`
