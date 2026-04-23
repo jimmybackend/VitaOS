@@ -1,31 +1,73 @@
 # VitaOS con IA
 
-VitaOS con IA es un sistema operativo desde cero, orientado a modo live/RAM, con una IA residente en el kernel, auditoría obligatoria en SQLite y nodos cooperativos para ayuda, coordinación y operación en escenarios de emergencia.
+VitaOS con IA es un sistema operativo desde cero, orientado a operación live/RAM, con una IA residente en el kernel, auditoría obligatoria en SQLite y nodos cooperativos para ayuda, coordinación y operación en escenarios de emergencia.
 
-## Estado actual
+## Estado del repositorio
 
-Este repositorio es la base de arranque del proyecto. Incluye:
+El repositorio ya contiene un slice ejecutable mínimo para el milestone actual, centrado en cerrar una base real de F1A/F1B sin agregar features fuera de alcance.
 
-- documentación fundacional del sistema;
-- reglas de trabajo para agentes de IA y Codex;
-- esquema inicial de auditoría en SQLite;
-- árbol de módulos del kernel y de arquitectura;
-- stubs y contratos de implementación para cada subsistema;
-- knowledge packs iniciales bilingües;
-- documentación de boot, IA, auditoría y VitaNet.
+### Slice hoy integrado
 
-## Objetivo del milestone F1A
+- build **UEFI x86_64**;
+- build **hosted** para validación rápida;
+- `kmain()` integrado con:
+  - validación de handoff;
+  - arranque temprano de consola;
+  - detección básica de hardware;
+  - auditoría persistente en SQLite en modo hosted;
+  - motor inicial de propuestas;
+  - consola guiada mínima;
+  - VitaNet hosted mínimo;
+  - peer discovery básico;
+  - replicación básica de bloque reciente de auditoría;
+- smoke tests para boot y auditoría.
 
-- Boot x86_64 UEFI.
-- Consola textual guiada.
-- Detección de hardware básica.
-- Auditoría persistente SQLite en USB writable.
-- Núcleo de IA residente con propuestas visibles.
-- Descubrimiento inicial de nodos VitaOS.
+## Alcance real del milestone actual
 
-## Regla central del proyecto
+### F1A base integrada
+- arranque x86_64 UEFI;
+- consola textual mínima;
+- detección básica de hardware;
+- estructura de auditoría persistente;
+- proposals visibles;
+- flujo guiado inicial.
 
-Sin auditoría persistente válida, VitaOS no entra en modo operativo completo.
+### F1B mínimo real
+- VitaNet hosted mínimo operativo;
+- descubrimiento básico de peer;
+- persistencia de `node_peer`;
+- propuesta de vinculación inicial;
+- exportación básica de bloque reciente de auditoría;
+- base mínima para `node_task`.
+
+## Regla central
+
+**Sin auditoría persistente válida, VitaOS no debe entrar en modo operativo completo.**
+
+Ese comportamiento se mantiene como regla del proyecto.
+
+## Estado operativo real por modo
+
+### EFI / UEFI
+Hoy el build EFI sirve para validar:
+- arranque;
+- consola temprana;
+- banner;
+- paso por `kmain()`.
+
+Actualmente el backend persistente completo de auditoría no está operativo en la ruta UEFI/freestanding, así que ese camino debe entenderse como **boot + diagnóstico restringido**, no como operación completa.
+
+### Hosted
+El modo hosted es hoy la ruta principal para validar:
+- SQLite persistente;
+- `boot_session`;
+- `hardware_snapshot`;
+- `audit_event` con hash chain;
+- `ai_proposal`;
+- `human_response`;
+- `node_peer`;
+- VitaNet hosted mínimo;
+- smoke test ampliado.
 
 ## Estructura principal
 
@@ -44,100 +86,212 @@ vitaos/
 └── tests/
 ```
 
-## Flujo recomendado de trabajo
+## Archivos clave del slice actual
 
-1. Leer `docs/VitaOS-SPEC.md`.
-2. Leer `AGENTS.md`.
-3. Revisar `schema/audit.sql`.
-4. Implementar primero F1A en `arch/x86_64/` y `kernel/`.
-5. Mantener toda nueva capacidad sincronizada con auditoría.
-6. No agregar features fuera del milestone.
+- `Makefile`
+- `arch/x86_64/boot/uefi_entry.c`
+- `arch/x86_64/boot/host_entry.c`
+- `kernel/kmain.c`
+- `kernel/console.c`
+- `kernel/hardware_discovery.c`
+- `kernel/proposal.c`
+- `kernel/node_core.c`
+- `kernel/audit_core.c`
+- `include/vita/console.h`
+- `include/vita/audit.h`
+- `include/vita/node.h`
+- `include/vita/proposal.h`
+- `schema/audit.sql`
+- `tools/test/smoke-boot.sh`
+- `tools/test/smoke-audit.sh`
 
-## Documentos clave
+## Requisitos
 
-- `docs/VitaOS-SPEC.md`
-- `docs/architecture/boot-flow.md`
-- `docs/architecture/ai-core.md`
-- `docs/audit/audit-model.md`
-- `docs/audit/audit-replication.md`
-- `docs/audit/sqlite-contract.md`
-- `docs/roadmap/F1-roadmap.md`
-- `docs/network/vitanet-v0.md`
-- `proto/vitanet/README.md`
-
-## Licencia sugerida
-
-MIT o Apache-2.0. La decisión final queda pendiente.
-
-## Nota para Codex
-
-Este repositorio contiene stubs intencionales. Antes de generar código, Codex debe:
-- identificar el módulo objetivo;
-- preservar el contrato de auditoría;
-- explicar supuestos;
-- producir código completo cuando se le pida;
-- respetar el milestone actual.
-
-
-## Vertical slice F1A (UEFI -> kmain)
-
-Este repositorio ya incluye un camino ejecutable mínimo de arranque x86_64 UEFI hasta `kmain()` con consola temprana.
-
-### Requisitos
-
-- `clang` + `lld`
+### Para EFI / QEMU
+- `clang`
+- `lld`
 - `qemu-system-x86_64`
-- OVMF en:
+- OVMF, por ejemplo:
   - `/usr/share/OVMF/OVMF_CODE.fd`
   - `/usr/share/OVMF/OVMF_VARS.fd`
 
-### Build
+### Para hosted
+- `clang`
+- `sqlite3`
+- `libsqlite3`
+- `python3`
+
+## Build
+
+### Build EFI
 
 ```bash
 make
 ```
 
 Salida esperada:
-- `build/efi/EFI/BOOT/BOOTX64.EFI`
 
-### Run (QEMU)
+```text
+build/efi/EFI/BOOT/BOOTX64.EFI
+```
+
+### Build hosted
+
+```bash
+make hosted
+```
+
+Salida esperada:
+
+```text
+build/hosted/vitaos-hosted
+```
+
+## Ejecución
+
+### EFI en QEMU
 
 ```bash
 make run
 ```
 
-### Smoke test
+### Hosted
+
+```bash
+./build/hosted/vitaos-hosted
+```
+
+O indicando explícitamente la base SQLite:
+
+```bash
+./build/hosted/vitaos-hosted build/audit/vitaos-audit.db
+```
+
+## Smoke tests
+
+### Smoke de boot EFI
 
 ```bash
 make smoke
 ```
 
-El smoke valida que aparezcan estas líneas:
+Valida al menos:
 - `VitaOS with AI / VitaOS con IA`
 - `Boot: OK`
 - `Arch: x86_64`
 - `Console: OK`
 
-
-### Smoke test de auditoría persistente (SQLite)
+### Smoke de auditoría + proposals + VitaNet hosted
 
 ```bash
 make smoke-audit
 ```
 
-Base de datos generada por defecto:
-- `build/audit/vitaos-audit.db`
+Valida:
+- creación de `boot_session`;
+- creación de `hardware_snapshot`;
+- cadena hash de `audit_event`;
+- proposals iniciales;
+- peer básico descubierto;
+- intento de replicación de auditoría;
+- presencia de tablas relevantes del slice actual.
 
-Verificación manual:
+## Verificación manual de la base SQLite
+
+### Sesión de boot
 
 ```bash
-sqlite3 build/audit/vitaos-audit.db "select boot_id, arch, boot_unix from boot_session;"
-sqlite3 build/audit/vitaos-audit.db "select event_seq, event_type, prev_hash, event_hash from audit_event order by id;"
+sqlite3 build/audit/vitaos-audit.db "select boot_id,node_id,arch,boot_unix from boot_session;"
 ```
 
+### Eventos de auditoría
 
-### Verificar hardware snapshot
+```bash
+sqlite3 build/audit/vitaos-audit.db "select event_seq,event_type,summary,prev_hash,event_hash from audit_event order by id;"
+```
+
+### Snapshot de hardware
 
 ```bash
 sqlite3 build/audit/vitaos-audit.db "select cpu_arch,cpu_model,ram_bytes,firmware_type,console_type,net_count,storage_count,usb_count,wifi_count from hardware_snapshot order by id desc limit 1;"
 ```
+
+### Proposals
+
+```bash
+sqlite3 build/audit/vitaos-audit.db "select proposal_id,proposal_type,status from ai_proposal order by rowid;"
+```
+
+### Peers
+
+```bash
+sqlite3 build/audit/vitaos-audit.db "select peer_id,transport,trust_state,link_state from node_peer;"
+```
+
+## Flujo funcional esperado hoy
+
+En hosted, el flujo esperado del slice actual es:
+
+1. boot y validación de handoff;
+2. activación de backend SQLite;
+3. creación de `boot_session`;
+4. detección de hardware;
+5. persistencia de `hardware_snapshot`;
+6. generación de proposals iniciales;
+7. presentación de consola guiada mínima;
+8. inicio de VitaNet hosted;
+9. descubrimiento de peer y persistencia de `node_peer`;
+10. intento de replicación básica de bloque reciente de auditoría.
+
+## Comandos de consola ya contemplados en el slice
+
+La consola guiada mínima ya contempla o prepara el flujo para comandos como:
+
+- `status`
+- `hw`
+- `audit`
+- `peers`
+- `proposals`
+- `emergency`
+- `helpme`
+- `approve <id>`
+- `reject <id>`
+- `shutdown`
+
+## Límites actuales conocidos
+
+Para mantener disciplina de milestone, todavía **no** se debe asumir que ya existen:
+
+- GUI completa;
+- backend persistente UEFI completo;
+- protocolo VitaNet completo;
+- replicación bidireccional completa;
+- scheduler avanzado;
+- userland amplio;
+- control completo de `node_task`.
+
+## Disciplina de desarrollo
+
+Este repositorio se está reparando y consolidando archivo por archivo.
+
+Reglas de trabajo activas:
+- no inventar features fuera del milestone;
+- respetar el esquema real de auditoría;
+- mantener compatibilidad con el código existente;
+- priorizar archivos completos listos para copiar y pegar;
+- mantener el foco en F1A/F1B mínimo real.
+
+## Documentos recomendados
+
+- `docs/VitaOS-SPEC.md`
+- `AGENTS.md`
+- `schema/audit.sql`
+
+## Nota para asistentes de IA y Codex
+
+Antes de generar o modificar código:
+1. identificar el módulo exacto;
+2. respetar el milestone actual;
+3. no asumir APIs o estructuras inexistentes;
+4. preservar la trazabilidad de auditoría;
+5. devolver código completo cuando se pida.
