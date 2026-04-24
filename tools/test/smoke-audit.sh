@@ -128,9 +128,67 @@ if [[ "$HUMAN_RESPONSE_TABLE" -lt 1 ]]; then
   exit 1
 fi
 
+HW_SCHEMA_MISSING=$(sqlite3 "$DB_PATH" "
+with expected(name) as (
+  values
+    ('display_count'),
+    ('keyboard_count'),
+    ('mouse_count'),
+    ('audio_count'),
+    ('microphone_count'),
+    ('ethernet_count'),
+    ('usb_controller_count')
+)
+select count(*)
+from expected e
+where not exists (
+  select 1 from pragma_table_info('hardware_snapshot') p where p.name = e.name
+);")
+
+if [[ "$HW_SCHEMA_MISSING" -ne 0 ]]; then
+  echo "smoke failed: expanded hardware_snapshot columns missing" >&2
+  exit 1
+fi
+
 RAM_BYTES=$(sqlite3 "$DB_PATH" "select coalesce(ram_bytes,0) from hardware_snapshot order by id desc limit 1;")
 if [[ "$RAM_BYTES" -le 0 ]]; then
   echo "smoke failed: ram_bytes not detected" >&2
+  exit 1
+fi
+
+DISPLAY_COUNT=$(sqlite3 "$DB_PATH" "select coalesce(display_count,0) from hardware_snapshot order by id desc limit 1;")
+if [[ "$DISPLAY_COUNT" -lt 1 ]]; then
+  echo "smoke failed: display_count not detected" >&2
+  exit 1
+fi
+
+HW_NEW_NULLS=$(sqlite3 "$DB_PATH" "
+select count(*) from hardware_snapshot
+where display_count is null
+   or keyboard_count is null
+   or mouse_count is null
+   or audio_count is null
+   or microphone_count is null
+   or ethernet_count is null
+   or usb_controller_count is null;")
+
+if [[ "$HW_NEW_NULLS" -ne 0 ]]; then
+  echo "smoke failed: expanded hardware_snapshot columns contain NULL" >&2
+  exit 1
+fi
+
+HW_NEGATIVE_VALUES=$(sqlite3 "$DB_PATH" "
+select count(*) from hardware_snapshot
+where display_count < 0
+   or keyboard_count < 0
+   or mouse_count < 0
+   or audio_count < 0
+   or microphone_count < 0
+   or ethernet_count < 0
+   or usb_controller_count < 0;")
+
+if [[ "$HW_NEGATIVE_VALUES" -ne 0 ]]; then
+  echo "smoke failed: expanded hardware_snapshot columns contain negative values" >&2
   exit 1
 fi
 
@@ -160,6 +218,21 @@ fi
 
 if ! grep -q "Guided status / Estado guiado:" "$LOG_FILE"; then
   echo "smoke failed: guided status not found in hosted log" >&2
+  exit 1
+fi
+
+if ! grep -q "display_count:" "$LOG_FILE"; then
+  echo "smoke failed: display_count not found in hosted log" >&2
+  exit 1
+fi
+
+if ! grep -q "usb_controller_count:" "$LOG_FILE"; then
+  echo "smoke failed: usb_controller_count not found in hosted log" >&2
+  exit 1
+fi
+
+if ! grep -q "detected_at_unix:" "$LOG_FILE"; then
+  echo "smoke failed: detected_at_unix not found in hosted log" >&2
   exit 1
 fi
 
