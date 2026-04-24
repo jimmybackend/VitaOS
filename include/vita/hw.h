@@ -6,6 +6,11 @@
 
 #include <vita/boot.h>
 
+/*
+ * Keep this structure synchronized with:
+ * - schema/audit.sql: hardware_snapshot
+ * - kernel/audit_core.c: audit_persist_hardware_snapshot()
+ */
 typedef struct {
     char cpu_arch[32];
     char cpu_model[128];
