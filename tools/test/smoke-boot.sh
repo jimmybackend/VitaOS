@@ -7,9 +7,10 @@ OVMF_VARS=${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS.fd}
 
 LOG_DIR=build/test
 LOG_FILE="$LOG_DIR/smoke-boot.log"
+OVMF_VARS_TMP="$LOG_DIR/OVMF_VARS.fd"
 
 mkdir -p "$LOG_DIR"
-rm -f "$LOG_FILE"
+rm -f "$LOG_FILE" "$OVMF_VARS_TMP"
 
 if ! command -v "$QEMU_BIN" >/dev/null 2>&1; then
   echo "SKIP: qemu not installed" >&2
@@ -26,19 +27,20 @@ if [[ ! -f build/efi/EFI/BOOT/BOOTX64.EFI ]]; then
   exit 1
 fi
 
+cp "$OVMF_VARS" "$OVMF_VARS_TMP"
+
 set +e
 "$QEMU_BIN" \
   -machine q35,accel=tcg \
   -cpu qemu64 \
   -m 512M \
-  -serial stdio \
   -display none \
   -no-reboot \
   -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-  -drive if=pflash,format=raw,file="$OVMF_VARS" \
+  -drive if=pflash,format=raw,file="$OVMF_VARS_TMP" \
   -drive format=raw,file=fat:rw:build/efi \
-  -monitor none \
-  >"$LOG_FILE" 2>&1 &
+  -serial file:"$LOG_FILE" \
+  -monitor none &
 PID=$!
 
 sleep 5
@@ -48,7 +50,7 @@ set -e
 
 if ! grep -q "VitaOS with AI / VitaOS con IA" "$LOG_FILE"; then
   echo "smoke failed: banner not found" >&2
-  cat "$LOG_FILE" >&2
+  cat "$LOG_FILE" >&2 || true
   exit 1
 fi
 
