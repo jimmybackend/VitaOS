@@ -69,13 +69,6 @@ static void u64_to_dec(uint64_t v, char out[32]) {
     out[j] = '\0';
 }
 
-static const char *safe_text(const char *text, const char *fallback) {
-    if (text && text[0]) {
-        return text;
-    }
-    return fallback;
-}
-
 static const char *boot_mode_name(const vita_handoff_t *handoff) {
     if (!handoff) {
         return "unknown";
@@ -90,6 +83,14 @@ static const char *boot_mode_name(const vita_handoff_t *handoff) {
     }
 
     return "unknown";
+}
+
+static void console_write_count(const char *label, int value) {
+    char num[32];
+
+    console_write_line(label);
+    u64_to_dec((uint64_t)((value < 0) ? 0 : value), num);
+    console_write_line(num);
 }
 
 static void console_show_hw(const vita_hw_snapshot_t *hw) {
@@ -116,21 +117,19 @@ static void console_show_hw(const vita_hw_snapshot_t *hw) {
     console_write_line("console_type:");
     console_write_line(hw->console_type[0] ? hw->console_type : "unknown");
 
-    console_write_line("net_count:");
-    u64_to_dec((uint64_t)hw->net_count, num);
-    console_write_line(num);
+    console_write_count("display_count:", hw->display_count);
+    console_write_count("keyboard_count:", hw->keyboard_count);
+    console_write_count("mouse_count:", hw->mouse_count);
+    console_write_count("audio_count:", hw->audio_count);
+    console_write_count("microphone_count:", hw->microphone_count);
 
-    console_write_line("storage_count:");
-    u64_to_dec((uint64_t)hw->storage_count, num);
-    console_write_line(num);
+    console_write_count("net_count:", hw->net_count);
+    console_write_count("ethernet_count:", hw->ethernet_count);
+    console_write_count("wifi_count:", hw->wifi_count);
 
-    console_write_line("usb_count:");
-    u64_to_dec((uint64_t)hw->usb_count, num);
-    console_write_line(num);
-
-    console_write_line("wifi_count:");
-    u64_to_dec((uint64_t)hw->wifi_count, num);
-    console_write_line(num);
+    console_write_count("storage_count:", hw->storage_count);
+    console_write_count("usb_count:", hw->usb_count);
+    console_write_count("usb_controller_count:", hw->usb_controller_count);
 }
 
 static void console_fill_state(vita_console_state_t *state,
