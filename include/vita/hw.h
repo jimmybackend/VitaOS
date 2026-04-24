@@ -10,12 +10,24 @@ typedef struct {
     char cpu_arch[32];
     char cpu_model[128];
     uint64_t ram_bytes;
+
     char firmware_type[32];
     char console_type[32];
+
+    int display_count;
+    int keyboard_count;
+    int mouse_count;
+    int audio_count;
+    int microphone_count;
+
     int net_count;
+    int ethernet_count;
+    int wifi_count;
+
     int storage_count;
     int usb_count;
-    int wifi_count;
+    int usb_controller_count;
+
     uint64_t detected_at_unix;
 } vita_hw_snapshot_t;
 
