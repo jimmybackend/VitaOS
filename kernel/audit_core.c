@@ -305,6 +305,73 @@ static bool exec_sql_file(sqlite3 *db, const char *path) {
     return true;
 }
 
+static bool hardware_snapshot_has_column(const char *column) {
+    sqlite3_stmt *st = NULL;
+    bool found = false;
+    int rc;
+
+    if (!g_audit.db || !column) {
+        return false;
+    }
+
+    if (sqlite3_prepare_v2(g_audit.db, "PRAGMA table_info(hardware_snapshot);", -1, &st, NULL) != SQLITE_OK) {
+        return false;
+    }
+
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        const unsigned char *name = sqlite3_column_text(st, 1);
+        if (name && strcmp((const char *)name, column) == 0) {
+            found = true;
+            break;
+        }
+    }
+
+    sqlite3_finalize(st);
+    return found;
+}
+
+static bool ensure_hardware_snapshot_column(const char *column, const char *definition) {
+    char sql[192];
+    char *errmsg = NULL;
+    int written;
+    int rc;
+
+    if (!column || !definition) {
+        return false;
+    }
+
+    if (hardware_snapshot_has_column(column)) {
+        return true;
+    }
+
+    written = snprintf(sql,
+                       sizeof(sql),
+                       "ALTER TABLE hardware_snapshot ADD COLUMN %s %s;",
+                       column,
+                       definition);
+    if (written < 0 || (unsigned long)written >= sizeof(sql)) {
+        return false;
+    }
+
+    rc = sqlite3_exec(g_audit.db, sql, NULL, NULL, &errmsg);
+    if (rc != SQLITE_OK) {
+        sqlite3_free(errmsg);
+        return false;
+    }
+
+    return true;
+}
+
+static bool ensure_hardware_snapshot_schema(void) {
+    return ensure_hardware_snapshot_column("display_count", "INTEGER NOT NULL DEFAULT 0") &&
+           ensure_hardware_snapshot_column("keyboard_count", "INTEGER NOT NULL DEFAULT 0") &&
+           ensure_hardware_snapshot_column("mouse_count", "INTEGER NOT NULL DEFAULT 0") &&
+           ensure_hardware_snapshot_column("audio_count", "INTEGER NOT NULL DEFAULT 0") &&
+           ensure_hardware_snapshot_column("microphone_count", "INTEGER NOT NULL DEFAULT 0") &&
+           ensure_hardware_snapshot_column("ethernet_count", "INTEGER NOT NULL DEFAULT 0") &&
+           ensure_hardware_snapshot_column("usb_controller_count", "INTEGER NOT NULL DEFAULT 0");
+}
+
 static bool bind_text_or_null(sqlite3_stmt *st, int idx, const char *text) {
     if (text && text[0]) {
         return sqlite3_bind_text(st, idx, text, -1, SQLITE_TRANSIENT) == SQLITE_OK;
@@ -439,8 +506,10 @@ void audit_emit_boot_event(const char *event_type, const char *summary) {
 bool audit_persist_hardware_snapshot(const vita_hw_snapshot_t *snapshot) {
     const char *sql =
         "INSERT INTO hardware_snapshot "
-        "(boot_id,cpu_arch,cpu_model,ram_bytes,firmware_type,console_type,net_count,storage_count,usb_count,wifi_count,detected_at_unix) "
-        "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11);";
+        "(boot_id,cpu_arch,cpu_model,ram_bytes,firmware_type,console_type,"
+        "display_count,keyboard_count,mouse_count,audio_count,microphone_count,"
+        "net_count,ethernet_count,storage_count,usb_count,usb_controller_count,wifi_count,detected_at_unix) "
+        "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18);";
     sqlite3_stmt *st = NULL;
     bool ok;
 
@@ -458,11 +527,18 @@ bool audit_persist_hardware_snapshot(const vita_hw_snapshot_t *snapshot) {
     sqlite3_bind_int64(st, 4, (sqlite3_int64)snapshot->ram_bytes);
     bind_text_or_null(st, 5, snapshot->firmware_type);
     bind_text_or_null(st, 6, snapshot->console_type);
-    sqlite3_bind_int(st, 7, snapshot->net_count);
-    sqlite3_bind_int(st, 8, snapshot->storage_count);
-    sqlite3_bind_int(st, 9, snapshot->usb_count);
-    sqlite3_bind_int(st, 10, snapshot->wifi_count);
-    sqlite3_bind_int64(st, 11, (sqlite3_int64)snapshot->detected_at_unix);
+    sqlite3_bind_int(st, 7, snapshot->display_count);
+    sqlite3_bind_int(st, 8, snapshot->keyboard_count);
+    sqlite3_bind_int(st, 9, snapshot->mouse_count);
+    sqlite3_bind_int(st, 10, snapshot->audio_count);
+    sqlite3_bind_int(st, 11, snapshot->microphone_count);
+    sqlite3_bind_int(st, 12, snapshot->net_count);
+    sqlite3_bind_int(st, 13, snapshot->ethernet_count);
+    sqlite3_bind_int(st, 14, snapshot->storage_count);
+    sqlite3_bind_int(st, 15, snapshot->usb_count);
+    sqlite3_bind_int(st, 16, snapshot->usb_controller_count);
+    sqlite3_bind_int(st, 17, snapshot->wifi_count);
+    sqlite3_bind_int64(st, 18, (sqlite3_int64)snapshot->detected_at_unix);
 
     ok = sqlite3_step(st) == SQLITE_DONE;
     sqlite3_finalize(st);
@@ -628,6 +704,12 @@ bool audit_init_persistent_backend(const vita_handoff_t *handoff) {
     }
 
     if (!exec_sql_file(g_audit.db, "schema/audit.sql")) {
+        sqlite3_close(g_audit.db);
+        g_audit.db = NULL;
+        return false;
+    }
+
+    if (!ensure_hardware_snapshot_schema()) {
         sqlite3_close(g_audit.db);
         g_audit.db = NULL;
         return false;
