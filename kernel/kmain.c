@@ -130,6 +130,10 @@ static void console_show_hw(const vita_hw_snapshot_t *hw) {
     console_write_count("storage_count:", hw->storage_count);
     console_write_count("usb_count:", hw->usb_count);
     console_write_count("usb_controller_count:", hw->usb_controller_count);
+
+    console_write_line("detected_at_unix:");
+    u64_to_dec(hw->detected_at_unix, num);
+    console_write_line(num);
 }
 
 static void console_fill_state(vita_console_state_t *state,
