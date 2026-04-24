@@ -41,8 +41,13 @@ static void str_copy(char *dst, unsigned long cap, const char *src) {
     dst[i] = '\0';
 }
 
+static int int_max(int a, int b) {
+    return (a > b) ? a : b;
+}
+
 static void apply_pci_snapshot(vita_hw_snapshot_t *out_snapshot) {
     vita_pci_snapshot_t pci;
+    int pci_net_count;
 
     if (!out_snapshot) {
         return;
@@ -54,13 +59,25 @@ static void apply_pci_snapshot(vita_hw_snapshot_t *out_snapshot) {
         return;
     }
 
-    out_snapshot->display_count += (int)pci.display_count;
-    out_snapshot->ethernet_count += (int)pci.ethernet_count;
-    out_snapshot->wifi_count += (int)pci.wifi_count;
-    out_snapshot->usb_controller_count += (int)pci.usb_controller_count;
-    out_snapshot->audio_count += (int)pci.audio_count;
-    out_snapshot->storage_count += (int)pci.storage_count;
-    out_snapshot->net_count += (int)(pci.ethernet_count + pci.wifi_count);
+    /*
+     * PCI discovery provides controller/class visibility. Do not add these
+     * blindly to hosted OS-visible counts, otherwise net/storage/display can
+     * be double-counted. Use PCI to fill typed/controller counters and as a
+     * lower bound for aggregate counters when the hosted view is unavailable.
+     */
+    out_snapshot->display_count = int_max(out_snapshot->display_count, (int)pci.display_count);
+    out_snapshot->ethernet_count = int_max(out_snapshot->ethernet_count, (int)pci.ethernet_count);
+    out_snapshot->wifi_count = int_max(out_snapshot->wifi_count, (int)pci.wifi_count);
+    out_snapshot->usb_controller_count = int_max(out_snapshot->usb_controller_count,
+                                                 (int)pci.usb_controller_count);
+    out_snapshot->audio_count = int_max(out_snapshot->audio_count, (int)pci.audio_count);
+
+    if (out_snapshot->storage_count == 0) {
+        out_snapshot->storage_count = (int)pci.storage_count;
+    }
+
+    pci_net_count = (int)(pci.ethernet_count + pci.wifi_count);
+    out_snapshot->net_count = int_max(out_snapshot->net_count, pci_net_count);
 
     /*
      * F1A/F1B limitation:
@@ -118,11 +135,28 @@ static int count_dir_entries(const char *path, bool (*filter)(const struct diren
     return count;
 }
 
+static bool net_iface_has_wireless_dir(const char *iface_name) {
+    DIR *w;
+    char path[256];
+
+    if (!iface_name) {
+        return false;
+    }
+
+    snprintf(path, sizeof(path), "/sys/class/net/%s/wireless", iface_name);
+    w = opendir(path);
+    if (!w) {
+        return false;
+    }
+
+    closedir(w);
+    return true;
+}
+
 static int count_wifi_ifaces(void) {
     DIR *d;
     struct dirent *de;
     int count = 0;
-    char path[256];
 
     d = opendir("/sys/class/net");
     if (!d) {
@@ -130,17 +164,36 @@ static int count_wifi_ifaces(void) {
     }
 
     while ((de = readdir(d)) != NULL) {
-        DIR *w;
-
         if (!filter_net(de)) {
             continue;
         }
 
-        snprintf(path, sizeof(path), "/sys/class/net/%s/wireless", de->d_name);
-        w = opendir(path);
-        if (w) {
+        if (net_iface_has_wireless_dir(de->d_name)) {
             count++;
-            closedir(w);
+        }
+    }
+
+    closedir(d);
+    return count;
+}
+
+static int count_ethernet_ifaces(void) {
+    DIR *d;
+    struct dirent *de;
+    int count = 0;
+
+    d = opendir("/sys/class/net");
+    if (!d) {
+        return 0;
+    }
+
+    while ((de = readdir(d)) != NULL) {
+        if (!filter_net(de)) {
+            continue;
+        }
+
+        if (!net_iface_has_wireless_dir(de->d_name)) {
+            count++;
         }
     }
 
@@ -165,13 +218,6 @@ static bool input_device_has_token(const char *event_name, const char *token) {
     }
 
     while (fgets(line, sizeof(line), f)) {
-        if (strstr(line, token) || strstr(line, "keyboard") || strstr(line, "Keyboard")) {
-            if (strcmp(token, "keyboard") == 0) {
-                found = true;
-                break;
-            }
-        }
-
         if (strstr(line, token)) {
             found = true;
             break;
@@ -325,9 +371,10 @@ bool hw_discovery_run(const vita_handoff_t *handoff, vita_hw_snapshot_t *out_sna
              (handoff && handoff->firmware_type == VITA_FIRMWARE_HOSTED) ? "stdio" : "uefi_text");
 
     out_snapshot->net_count = count_dir_entries("/sys/class/net", filter_net);
+    out_snapshot->ethernet_count = count_ethernet_ifaces();
+    out_snapshot->wifi_count = count_wifi_ifaces();
     out_snapshot->storage_count = count_dir_entries("/sys/block", filter_storage);
     out_snapshot->usb_count = count_dir_entries("/sys/bus/usb/devices", filter_usb);
-    out_snapshot->wifi_count = count_wifi_ifaces();
     out_snapshot->keyboard_count = count_keyboards();
     out_snapshot->mouse_count = count_mice();
     out_snapshot->display_count = 1;
