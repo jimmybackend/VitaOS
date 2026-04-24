@@ -43,7 +43,7 @@ set +e
   -monitor none &
 PID=$!
 
-sleep 5
+sleep 8
 kill "$PID" >/dev/null 2>&1 || true
 wait "$PID" >/dev/null 2>&1 || true
 set -e
