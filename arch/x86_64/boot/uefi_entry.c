@@ -9,6 +9,8 @@
 #include <vita/boot.h>
 #include <vita/console.h>
 
+#include "uefi_splash.h"
+
 #define EFI_SUCCESS 0
 
 typedef uint64_t efi_status_t;
@@ -83,6 +85,13 @@ efi_status_t efi_main(efi_handle_t image_handle, efi_system_table_t *system_tabl
 
     g_st = system_table;
     console_bind_writer(uefi_console_write);
+
+    /*
+     * Optional visual boot splash.
+     * If /img/1.bmp ... /img/4.bmp are missing or GOP is unavailable,
+     * this returns silently and the normal text-first boot continues.
+     */
+    vita_uefi_show_splash(image_handle, system_table);
 
     handoff.magic = VITA_BOOT_MAGIC;
     handoff.version = 1;
