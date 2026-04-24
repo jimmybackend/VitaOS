@@ -4,6 +4,7 @@
  */
 
 #include <vita/hw.h>
+#include <vita/pci.h>
 
 #ifdef VITA_HOSTED
 #include <dirent.h>
@@ -40,6 +41,35 @@ static void str_copy(char *dst, unsigned long cap, const char *src) {
     dst[i] = '\0';
 }
 
+static void apply_pci_snapshot(vita_hw_snapshot_t *out_snapshot) {
+    vita_pci_snapshot_t pci;
+
+    if (!out_snapshot) {
+        return;
+    }
+
+    mem_zero(&pci, sizeof(pci));
+
+    if (!pci_discovery_run(&pci)) {
+        return;
+    }
+
+    out_snapshot->display_count += (int)pci.display_count;
+    out_snapshot->ethernet_count += (int)pci.ethernet_count;
+    out_snapshot->wifi_count += (int)pci.wifi_count;
+    out_snapshot->usb_controller_count += (int)pci.usb_controller_count;
+    out_snapshot->audio_count += (int)pci.audio_count;
+    out_snapshot->storage_count += (int)pci.storage_count;
+    out_snapshot->net_count += (int)(pci.ethernet_count + pci.wifi_count);
+
+    /*
+     * F1A/F1B limitation:
+     * PCI can identify audio controllers, but microphone presence is not
+     * reliable without codec/USB/audio-class enumeration. Keep this as 0.
+     */
+    out_snapshot->microphone_count = 0;
+}
+
 #ifdef VITA_HOSTED
 static uint64_t unix_now(void) {
     return (uint64_t)time(NULL);
@@ -61,6 +91,10 @@ static bool filter_storage(const struct dirent *de) {
 
 static bool filter_usb(const struct dirent *de) {
     return filter_not_dot(de) && strchr(de->d_name, '-') != NULL;
+}
+
+static bool filter_input_event(const struct dirent *de) {
+    return filter_not_dot(de) && strncmp(de->d_name, "event", 5) == 0;
 }
 
 static int count_dir_entries(const char *path, bool (*filter)(const struct dirent *)) {
@@ -107,6 +141,92 @@ static int count_wifi_ifaces(void) {
         if (w) {
             count++;
             closedir(w);
+        }
+    }
+
+    closedir(d);
+    return count;
+}
+
+static bool input_device_has_token(const char *event_name, const char *token) {
+    FILE *f;
+    char path[256];
+    char line[256];
+    bool found = false;
+
+    if (!event_name || !token) {
+        return false;
+    }
+
+    snprintf(path, sizeof(path), "/sys/class/input/%s/device/name", event_name);
+    f = fopen(path, "r");
+    if (!f) {
+        return false;
+    }
+
+    while (fgets(line, sizeof(line), f)) {
+        if (strstr(line, token) || strstr(line, "keyboard") || strstr(line, "Keyboard")) {
+            if (strcmp(token, "keyboard") == 0) {
+                found = true;
+                break;
+            }
+        }
+
+        if (strstr(line, token)) {
+            found = true;
+            break;
+        }
+    }
+
+    fclose(f);
+    return found;
+}
+
+static int count_keyboards(void) {
+    DIR *d;
+    struct dirent *de;
+    int count = 0;
+
+    d = opendir("/sys/class/input");
+    if (!d) {
+        return 0;
+    }
+
+    while ((de = readdir(d)) != NULL) {
+        if (!filter_input_event(de)) {
+            continue;
+        }
+
+        if (input_device_has_token(de->d_name, "keyboard") ||
+            input_device_has_token(de->d_name, "Keyboard")) {
+            count++;
+        }
+    }
+
+    closedir(d);
+    return count;
+}
+
+static int count_mice(void) {
+    DIR *d;
+    struct dirent *de;
+    int count = 0;
+
+    d = opendir("/sys/class/input");
+    if (!d) {
+        return 0;
+    }
+
+    while ((de = readdir(d)) != NULL) {
+        if (!filter_input_event(de)) {
+            continue;
+        }
+
+        if (input_device_has_token(de->d_name, "mouse") ||
+            input_device_has_token(de->d_name, "Mouse") ||
+            input_device_has_token(de->d_name, "touchpad") ||
+            input_device_has_token(de->d_name, "Touchpad")) {
+            count++;
         }
     }
 
@@ -208,6 +328,9 @@ bool hw_discovery_run(const vita_handoff_t *handoff, vita_hw_snapshot_t *out_sna
     out_snapshot->storage_count = count_dir_entries("/sys/block", filter_storage);
     out_snapshot->usb_count = count_dir_entries("/sys/bus/usb/devices", filter_usb);
     out_snapshot->wifi_count = count_wifi_ifaces();
+    out_snapshot->keyboard_count = count_keyboards();
+    out_snapshot->mouse_count = count_mice();
+    out_snapshot->display_count = 1;
     out_snapshot->detected_at_unix = unix_now();
 #else
     str_copy(out_snapshot->cpu_arch,
@@ -215,8 +338,17 @@ bool hw_discovery_run(const vita_handoff_t *handoff, vita_hw_snapshot_t *out_sna
              (handoff && handoff->arch_name) ? handoff->arch_name : "unknown");
     str_copy(out_snapshot->firmware_type, sizeof(out_snapshot->firmware_type), "uefi");
     str_copy(out_snapshot->console_type, sizeof(out_snapshot->console_type), "uefi_text");
+
+    /*
+     * UEFI console implies at least one display path and keyboard input path
+     * when firmware exposes Simple Text Output/Input to the boot stage.
+     */
+    out_snapshot->display_count = 1;
+    out_snapshot->keyboard_count = 1;
     out_snapshot->detected_at_unix = 0;
 #endif
+
+    apply_pci_snapshot(out_snapshot);
 
     return true;
 }
