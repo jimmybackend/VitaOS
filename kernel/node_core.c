@@ -336,7 +336,10 @@ bool node_core_start(const vita_handoff_t *handoff) {
     struct sockaddr_in local;
     char msg[512];
     char block[512];
-    (void)handoff;
+
+    if (handoff && handoff->vitanet_seed_endpoint && handoff->vitanet_seed_endpoint[0]) {
+        copy_text(g_seed_endpoint, sizeof(g_seed_endpoint), handoff->vitanet_seed_endpoint);
+    }
 
     if (!parse_endpoint(g_seed_endpoint, &target)) {
         audit_emit_boot_event("VITANET_ERROR", "invalid seed endpoint");
