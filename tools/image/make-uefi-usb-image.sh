@@ -9,6 +9,7 @@ set -euo pipefail
 # - a raw disk image with GPT
 # - one EFI System Partition (FAT32)
 # - EFI/BOOT/BOOTX64.EFI copied from build/efi/EFI/BOOT/BOOTX64.EFI
+# - /img/1.bmp ... /img/4.bmp copied as boot splash frames
 #
 # This script does NOT write to a physical USB device by itself.
 # It only creates an image that can be tested in QEMU or written manually with dd.
@@ -17,6 +18,12 @@ IMAGE_PATH=${1:-build/image/vitaos-uefi-live.img}
 IMAGE_SIZE_MIB=${IMAGE_SIZE_MIB:-128}
 BUILD_EFI=${BUILD_EFI:-1}
 EFI_BINARY=${EFI_BINARY:-build/efi/EFI/BOOT/BOOTX64.EFI}
+SPLASH_ASSETS=(
+  "img/1.bmp"
+  "img/2.bmp"
+  "img/3.bmp"
+  "img/4.bmp"
+)
 PART_START_SECTOR=${PART_START_SECTOR:-2048}
 SECTOR_SIZE=512
 PART_OFFSET_BYTES=$((PART_START_SECTOR * SECTOR_SIZE))
@@ -59,6 +66,7 @@ check_tools() {
   need_cmd mkfs.fat
   need_cmd mmd
   need_cmd mcopy
+  need_cmd mdir
   need_cmd truncate
 }
 
@@ -66,6 +74,16 @@ check_mkfs_offset_support() {
   if ! mkfs.fat --help 2>&1 | grep -q -- '--offset'; then
     fail "mkfs.fat on this system does not support --offset. Install a recent dosfstools package."
   fi
+}
+
+check_splash_assets() {
+  local asset
+
+  for asset in "${SPLASH_ASSETS[@]}"; do
+    if [[ ! -f "$asset" ]]; then
+      fail "missing splash asset: $asset"
+    fi
+  done
 }
 
 build_efi_if_needed() {
@@ -120,12 +138,32 @@ copy_efi_files() {
   MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$EFI_BINARY" ::/EFI/BOOT/BOOTX64.EFI
 }
 
+copy_splash_assets() {
+  local asset
+
+  info "copying VitaOS boot splash frames"
+
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/img || true
+
+  for asset in "${SPLASH_ASSETS[@]}"; do
+    MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$asset" "::/$asset"
+  done
+}
+
 verify_image() {
-  info "verifying EFI boot file exists inside image"
+  local asset
+
+  info "verifying EFI boot file and splash frames exist inside image"
 
   if ! MTOOLS_SKIP_CHECK=1 mdir -i "$MTOOLS_IMAGE" ::/EFI/BOOT/BOOTX64.EFI >/dev/null 2>&1; then
     fail "BOOTX64.EFI was not copied correctly into the image"
   fi
+
+  for asset in "${SPLASH_ASSETS[@]}"; do
+    if ! MTOOLS_SKIP_CHECK=1 mdir -i "$MTOOLS_IMAGE" "::/$asset" >/dev/null 2>&1; then
+      fail "$asset was not copied correctly into the image"
+    fi
+  done
 }
 
 print_next_steps() {
@@ -162,11 +200,13 @@ main() {
 
   check_tools
   check_mkfs_offset_support
+  check_splash_assets
   build_efi_if_needed
   create_empty_image
   create_gpt_layout
   format_efi_partition
   copy_efi_files
+  copy_splash_assets
   verify_image
   print_next_steps
 }
