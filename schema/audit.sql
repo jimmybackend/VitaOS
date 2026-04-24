@@ -17,10 +17,17 @@ CREATE TABLE IF NOT EXISTS hardware_snapshot (
     ram_bytes INTEGER,
     firmware_type TEXT,
     console_type TEXT,
+    display_count INTEGER NOT NULL DEFAULT 0,
+    keyboard_count INTEGER NOT NULL DEFAULT 0,
+    mouse_count INTEGER NOT NULL DEFAULT 0,
+    audio_count INTEGER NOT NULL DEFAULT 0,
+    microphone_count INTEGER NOT NULL DEFAULT 0,
     net_count INTEGER,
+    ethernet_count INTEGER NOT NULL DEFAULT 0,
     storage_count INTEGER,
     usb_count INTEGER,
-    wifi_count INTEGER DEFAULT 0,
+    usb_controller_count INTEGER NOT NULL DEFAULT 0,
+    wifi_count INTEGER NOT NULL DEFAULT 0,
     detected_at_unix INTEGER NOT NULL,
     FOREIGN KEY (boot_id) REFERENCES boot_session(boot_id)
 );
