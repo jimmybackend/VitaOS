@@ -15,6 +15,7 @@ EFI_SPLASH_ASSETS := \
 HOSTED_DIR := $(BUILD_DIR)/hosted
 HOSTED_BIN := $(HOSTED_DIR)/vitaos-hosted
 AUDIT_DIR := $(BUILD_DIR)/audit
+ISO_IMAGE := $(BUILD_DIR)/iso/vitaos-uefi-live.iso
 
 CC := clang
 
@@ -53,6 +54,9 @@ efi: $(EFI_APP)
 
 hosted: $(HOSTED_BIN)
 
+iso: $(EFI_APP)
+	BUILD_EFI=0 ./tools/image/make-uefi-iso.sh $(ISO_IMAGE)
+
 $(EFI_APP): $(EFI_SOURCES) $(EFI_SPLASH_ASSETS)
 	mkdir -p $(EFI_BOOT_DIR) $(EFI_SPLASH_DIR)
 	$(CC) $(EFI_CFLAGS) $(EFI_LDFLAGS) -o $@ $(EFI_SOURCES)
@@ -74,4 +78,4 @@ smoke-audit: $(HOSTED_BIN)
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all efi hosted run smoke smoke-audit clean
+.PHONY: all efi hosted iso run smoke smoke-audit clean
