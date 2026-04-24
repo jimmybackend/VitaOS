@@ -5,6 +5,12 @@ BUILD_DIR := build
 EFI_DIR := $(BUILD_DIR)/efi
 EFI_BOOT_DIR := $(EFI_DIR)/EFI/BOOT
 EFI_APP := $(EFI_BOOT_DIR)/BOOTX64.EFI
+EFI_SPLASH_DIR := $(EFI_DIR)/img
+EFI_SPLASH_ASSETS := \
+	img/1.bmp \
+	img/2.bmp \
+	img/3.bmp \
+	img/4.bmp
 
 HOSTED_DIR := $(BUILD_DIR)/hosted
 HOSTED_BIN := $(HOSTED_DIR)/vitaos-hosted
@@ -32,6 +38,7 @@ COMMON_KERNEL := \
 
 EFI_SOURCES := \
 	arch/x86_64/boot/uefi_entry.c \
+	arch/x86_64/boot/uefi_splash.c \
 	$(COMMON_KERNEL)
 
 HOSTED_SOURCES := \
@@ -46,9 +53,10 @@ efi: $(EFI_APP)
 
 hosted: $(HOSTED_BIN)
 
-$(EFI_APP): $(EFI_SOURCES)
-	mkdir -p $(EFI_BOOT_DIR)
+$(EFI_APP): $(EFI_SOURCES) $(EFI_SPLASH_ASSETS)
+	mkdir -p $(EFI_BOOT_DIR) $(EFI_SPLASH_DIR)
 	$(CC) $(EFI_CFLAGS) $(EFI_LDFLAGS) -o $@ $(EFI_SOURCES)
+	cp $(EFI_SPLASH_ASSETS) $(EFI_SPLASH_DIR)/
 
 $(HOSTED_BIN): $(HOSTED_SOURCES)
 	mkdir -p $(HOSTED_DIR) $(AUDIT_DIR)
