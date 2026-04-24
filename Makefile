@@ -26,6 +26,7 @@ COMMON_KERNEL := \
 	kernel/panic.c \
 	kernel/audit_core.c \
 	kernel/hardware_discovery.c \
+	kernel/pci_discovery.c \
 	kernel/proposal.c \
 	kernel/node_core.c
 
