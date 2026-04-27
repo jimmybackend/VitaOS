@@ -5,9 +5,13 @@
 #include <stdint.h>
 
 #define VITA_CONSOLE_LINE_MAX 128U
+#define VITA_CONSOLE_HISTORY_MAX 8U
+#define VITA_CONSOLE_PAGE_LINES_DEFAULT 22U
 
 typedef void (*vita_console_write_fn)(const char *text);
+typedef void (*vita_console_write_raw_fn)(const char *text);
 typedef bool (*vita_console_read_line_fn)(char *out, unsigned long out_cap);
+typedef void (*vita_console_clear_fn)(void);
 
 typedef struct {
     const char *arch_name;
@@ -38,10 +42,18 @@ typedef struct {
 } vita_console_state_t;
 
 void console_bind_writer(vita_console_write_fn writer);
+void console_bind_raw_writer(vita_console_write_raw_fn writer);
 void console_bind_reader(vita_console_read_line_fn reader);
+void console_bind_clear(vita_console_clear_fn clear_fn);
+
 void console_early_init(void);
 void console_write_line(const char *text);
+void console_write_raw(const char *text);
 bool console_read_line(char *out, unsigned long out_cap);
+void console_clear_screen(void);
+
+void console_pager_begin(unsigned long page_lines);
+void console_pager_end(void);
 
 void console_banner(const vita_boot_status_t *status);
 

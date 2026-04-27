@@ -372,6 +372,16 @@ static void show_emergency(const vita_command_context_t *ctx, const char *free_t
     audit_emit_boot_event("EMERGENCY_FLOW_SHOWN", free_text && free_text[0] ? free_text : "emergency command");
 }
 
+static void show_refreshed_header(vita_command_context_t *ctx) {
+    if (!ctx) {
+        return;
+    }
+
+    command_refresh_state(ctx);
+    console_guided_show_welcome(&ctx->console_state);
+    console_guided_show_menu();
+}
+
 vita_command_result_t command_handle_line(vita_command_context_t *ctx, const char *line) {
     char local[VITA_CONSOLE_LINE_MAX];
     const char *cmd;
@@ -439,6 +449,13 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
         return VITA_COMMAND_CONTINUE;
     }
 
+    if (str_eq(cmd, "clear") || str_eq(cmd, "cls")) {
+        audit_emit_boot_event("COMMAND_CLEAR", "clear");
+        console_clear_screen();
+        show_refreshed_header(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
     if (starts_with(cmd, "approve ") || starts_with(cmd, "reject ")) {
         if (!ctx->proposal_ready) {
             console_write_line("Proposal engine unavailable / Motor de propuestas no disponible");
@@ -463,6 +480,7 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
 
 void command_loop_run(vita_command_context_t *ctx) {
     char line[VITA_CONSOLE_LINE_MAX];
+    vita_command_result_t result;
 
     if (!ctx) {
         return;
@@ -481,7 +499,11 @@ void command_loop_run(vita_command_context_t *ctx) {
             break;
         }
 
-        if (command_handle_line(ctx, line) == VITA_COMMAND_SHUTDOWN) {
+        console_pager_begin(VITA_CONSOLE_PAGE_LINES_DEFAULT);
+        result = command_handle_line(ctx, line);
+        console_pager_end();
+
+        if (result == VITA_COMMAND_SHUTDOWN) {
             break;
         }
     }

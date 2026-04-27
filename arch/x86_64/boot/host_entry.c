@@ -20,6 +20,20 @@ static void host_console_write(const char *text) {
     fflush(stdout);
 }
 
+static void host_console_write_raw(const char *text) {
+    if (!text) {
+        return;
+    }
+
+    fputs(text, stdout);
+    fflush(stdout);
+}
+
+static void host_console_clear(void) {
+    fputs("\033[2J\033[H", stdout);
+    fflush(stdout);
+}
+
 static bool host_console_read_line(char *out, unsigned long out_cap) {
     unsigned long n = 0;
 
@@ -64,7 +78,9 @@ int main(int argc, char **argv) {
     handoff.uefi_system_table = 0;
 
     console_bind_writer(host_console_write);
+    console_bind_raw_writer(host_console_write_raw);
     console_bind_reader(host_console_read_line);
+    console_bind_clear(host_console_clear);
     kmain(&handoff);
     return 0;
 }

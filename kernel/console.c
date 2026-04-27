@@ -6,7 +6,14 @@
 #include <vita/console.h>
 
 static vita_console_write_fn g_console_writer = 0;
+static vita_console_write_raw_fn g_console_raw_writer = 0;
 static vita_console_read_line_fn g_console_reader = 0;
+static vita_console_clear_fn g_console_clear = 0;
+
+static bool g_pager_enabled = false;
+static bool g_pager_busy = false;
+static unsigned long g_pager_line_count = 0;
+static unsigned long g_pager_line_limit = VITA_CONSOLE_PAGE_LINES_DEFAULT;
 
 static void str_copy(char *dst, unsigned long cap, const char *src) {
     unsigned long i = 0;
@@ -113,16 +120,58 @@ static void console_write_kv_u32(const char *key, uint32_t value) {
     console_write_kv(key, num);
 }
 
+static void console_pager_after_line(void) {
+    char wait_line[8];
+
+    if (!g_pager_enabled || g_pager_busy || !g_console_reader) {
+        return;
+    }
+
+    g_pager_line_count++;
+    if (g_pager_line_count < g_pager_line_limit) {
+        return;
+    }
+
+    g_pager_busy = true;
+    console_write_raw("-- more / mas: Enter --");
+    (void)console_read_line(wait_line, sizeof(wait_line));
+    g_pager_line_count = 0;
+    g_pager_busy = false;
+}
+
 void console_bind_writer(vita_console_write_fn writer) {
     g_console_writer = writer;
+}
+
+void console_bind_raw_writer(vita_console_write_raw_fn writer) {
+    g_console_raw_writer = writer;
 }
 
 void console_bind_reader(vita_console_read_line_fn reader) {
     g_console_reader = reader;
 }
 
+void console_bind_clear(vita_console_clear_fn clear_fn) {
+    g_console_clear = clear_fn;
+}
+
 void console_early_init(void) {
     /* Early console writer/reader are provided by architecture boot stage. */
+}
+
+void console_write_raw(const char *text) {
+    if (!text) {
+        return;
+    }
+
+    if (g_console_raw_writer) {
+        g_console_raw_writer(text);
+        return;
+    }
+
+    if (g_console_writer) {
+        g_console_writer(text);
+    }
 }
 
 void console_write_line(const char *text) {
@@ -130,6 +179,7 @@ void console_write_line(const char *text) {
         return;
     }
     g_console_writer(text);
+    console_pager_after_line();
 }
 
 bool console_read_line(char *out, unsigned long out_cap) {
@@ -144,6 +194,30 @@ bool console_read_line(char *out, unsigned long out_cap) {
     }
 
     return g_console_reader(out, out_cap);
+}
+
+void console_clear_screen(void) {
+    if (g_console_clear) {
+        g_console_clear();
+        g_pager_line_count = 0;
+        return;
+    }
+
+    console_write_line("");
+    console_write_line("----------------------------------------");
+}
+
+void console_pager_begin(unsigned long page_lines) {
+    g_pager_enabled = true;
+    g_pager_busy = false;
+    g_pager_line_count = 0;
+    g_pager_line_limit = page_lines ? page_lines : VITA_CONSOLE_PAGE_LINES_DEFAULT;
+}
+
+void console_pager_end(void) {
+    g_pager_enabled = false;
+    g_pager_busy = false;
+    g_pager_line_count = 0;
 }
 
 void console_banner(const vita_boot_status_t *status) {
@@ -211,6 +285,7 @@ void console_guided_show_menu(void) {
     console_write_line("- proposals");
     console_write_line("- emergency");
     console_write_line("- helpme");
+    console_write_line("- clear");
     console_write_line("- approve <id>");
     console_write_line("- reject <id>");
     console_write_line("- shutdown");
@@ -225,9 +300,11 @@ void console_guided_show_help(void) {
     console_write_line("proposals   -> list current system proposals");
     console_write_line("emergency   -> enter emergency-oriented flow");
     console_write_line("helpme      -> show this help and guided menu");
+    console_write_line("clear       -> clear screen and redraw guided header");
     console_write_line("approve ID  -> approve a proposal");
     console_write_line("reject ID   -> reject a proposal");
     console_write_line("shutdown    -> stop current command session");
+    console_write_line("Keys / Teclas: Up/Down history in UEFI, Enter continues paging.");
 }
 
 void console_guided_show_status(const vita_console_state_t *state) {
@@ -251,5 +328,5 @@ void console_guided_show_status(const vita_console_state_t *state) {
 }
 
 void console_guided_prompt(void) {
-    console_write_line(">");
+    console_write_raw("> ");
 }

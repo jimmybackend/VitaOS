@@ -12,6 +12,8 @@
 #include "uefi_splash.h"
 
 #define EFI_SUCCESS 0ULL
+#define EFI_SCAN_UP 0x0001U
+#define EFI_SCAN_DOWN 0x0002U
 
 typedef uint64_t efi_status_t;
 typedef void *efi_handle_t;
@@ -44,6 +46,19 @@ struct efi_simple_text_input_protocol {
 struct efi_simple_text_output_protocol {
     efi_status_t (*reset)(efi_simple_text_output_protocol_t *self, uint8_t extended_verification);
     efi_status_t (*output_string)(efi_simple_text_output_protocol_t *self, char16_t *string);
+    efi_status_t (*test_string)(efi_simple_text_output_protocol_t *self, char16_t *string);
+    efi_status_t (*query_mode)(efi_simple_text_output_protocol_t *self,
+                               uint64_t mode_number,
+                               uint64_t *columns,
+                               uint64_t *rows);
+    efi_status_t (*set_mode)(efi_simple_text_output_protocol_t *self, uint64_t mode_number);
+    efi_status_t (*set_attribute)(efi_simple_text_output_protocol_t *self, uint64_t attribute);
+    efi_status_t (*clear_screen)(efi_simple_text_output_protocol_t *self);
+    efi_status_t (*set_cursor_position)(efi_simple_text_output_protocol_t *self,
+                                         uint64_t column,
+                                         uint64_t row);
+    efi_status_t (*enable_cursor)(efi_simple_text_output_protocol_t *self, uint8_t visible);
+    void *mode;
 };
 
 struct efi_boot_services {
@@ -99,6 +114,8 @@ typedef struct {
 void kmain(const vita_handoff_t *handoff);
 
 static efi_system_table_t *g_st = 0;
+static char g_history[VITA_CONSOLE_HISTORY_MAX][VITA_CONSOLE_LINE_MAX];
+static unsigned long g_history_count = 0;
 
 static void ascii_to_char16(const char *src, char16_t *dst, size_t dst_cap, uint8_t append_newline) {
     size_t i = 0;
@@ -147,6 +164,19 @@ static void uefi_console_write(const char *text) {
     g_st->con_out->output_string(g_st->con_out, buffer);
 }
 
+static void uefi_console_write_raw(const char *text) {
+    uefi_output_raw(text);
+}
+
+static void uefi_console_clear(void) {
+    if (g_st && g_st->con_out && g_st->con_out->clear_screen) {
+        g_st->con_out->clear_screen(g_st->con_out);
+        return;
+    }
+
+    uefi_output_raw("\r\n\r\n\r\n");
+}
+
 static void uefi_echo_char(char c) {
     char text[2];
 
@@ -192,9 +222,100 @@ static bool uefi_allowed_input_char(char c) {
     return false;
 }
 
+static void uefi_copy_text(char *dst, unsigned long cap, const char *src) {
+    unsigned long i = 0;
+
+    if (!dst || cap == 0) {
+        return;
+    }
+
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+
+    while (src[i] && (i + 1) < cap) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
+static unsigned long uefi_strlen(const char *s) {
+    unsigned long n = 0;
+
+    if (!s) {
+        return 0;
+    }
+
+    while (s[n]) {
+        n++;
+    }
+
+    return n;
+}
+
+static void uefi_history_push(const char *line) {
+    unsigned long i;
+
+    if (!line || !line[0]) {
+        return;
+    }
+
+    if (g_history_count > 0) {
+        if (uefi_strlen(g_history[g_history_count - 1]) == uefi_strlen(line)) {
+            bool same = true;
+            for (i = 0; line[i] || g_history[g_history_count - 1][i]; ++i) {
+                if (line[i] != g_history[g_history_count - 1][i]) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) {
+                return;
+            }
+        }
+    }
+
+    if (g_history_count < VITA_CONSOLE_HISTORY_MAX) {
+        uefi_copy_text(g_history[g_history_count], VITA_CONSOLE_LINE_MAX, line);
+        g_history_count++;
+        return;
+    }
+
+    for (i = 1; i < VITA_CONSOLE_HISTORY_MAX; ++i) {
+        uefi_copy_text(g_history[i - 1], VITA_CONSOLE_LINE_MAX, g_history[i]);
+    }
+    uefi_copy_text(g_history[VITA_CONSOLE_HISTORY_MAX - 1], VITA_CONSOLE_LINE_MAX, line);
+}
+
+static void uefi_redraw_input(const char *line, unsigned long len, unsigned long *last_drawn_len) {
+    unsigned long i;
+    unsigned long old_len;
+
+    old_len = last_drawn_len ? *last_drawn_len : 0;
+
+    uefi_output_raw("\r> ");
+    uefi_output_raw(line ? line : "");
+
+    if (old_len > len) {
+        for (i = 0; i < old_len - len; ++i) {
+            uefi_output_raw(" ");
+        }
+        for (i = 0; i < old_len - len; ++i) {
+            uefi_output_raw("\b");
+        }
+    }
+
+    if (last_drawn_len) {
+        *last_drawn_len = len;
+    }
+}
+
 static bool uefi_console_read_line(char *out, unsigned long out_cap) {
     unsigned long len = 0;
-    unsigned long idle_polls = 0;
+    unsigned long last_drawn_len = 0;
+    unsigned long history_cursor;
     efi_input_key_t key;
 
     if (!out || out_cap == 0) {
@@ -207,23 +328,44 @@ static bool uefi_console_read_line(char *out, unsigned long out_cap) {
         return false;
     }
 
+    history_cursor = g_history_count;
+
     for (;;) {
         key.scan_code = 0;
         key.unicode_char = 0;
 
         if (!uefi_try_read_key(&key)) {
-            idle_polls++;
-            if (idle_polls >= 6000UL) {
-                return false;
-            }
             uefi_poll_delay();
             continue;
         }
 
-        idle_polls = 0;
+        if (key.unicode_char == 0 && key.scan_code == EFI_SCAN_UP) {
+            if (g_history_count > 0 && history_cursor > 0) {
+                history_cursor--;
+                uefi_copy_text(out, out_cap, g_history[history_cursor]);
+                len = uefi_strlen(out);
+                uefi_redraw_input(out, len, &last_drawn_len);
+            }
+            continue;
+        }
+
+        if (key.unicode_char == 0 && key.scan_code == EFI_SCAN_DOWN) {
+            if (history_cursor < g_history_count) {
+                history_cursor++;
+                if (history_cursor == g_history_count) {
+                    out[0] = '\0';
+                } else {
+                    uefi_copy_text(out, out_cap, g_history[history_cursor]);
+                }
+                len = uefi_strlen(out);
+                uefi_redraw_input(out, len, &last_drawn_len);
+            }
+            continue;
+        }
 
         if (key.unicode_char == 13 || key.unicode_char == 10) {
             out[len] = '\0';
+            uefi_history_push(out);
             uefi_output_raw("\r\n");
             return true;
         }
@@ -233,6 +375,7 @@ static bool uefi_console_read_line(char *out, unsigned long out_cap) {
                 len--;
                 out[len] = '\0';
                 uefi_output_raw("\b \b");
+                last_drawn_len = len;
             }
             continue;
         }
@@ -243,6 +386,7 @@ static bool uefi_console_read_line(char *out, unsigned long out_cap) {
                 out[len++] = c;
                 out[len] = '\0';
                 uefi_echo_char(c);
+                last_drawn_len = len;
             }
         }
     }
@@ -253,7 +397,9 @@ efi_status_t efi_main(efi_handle_t image_handle, efi_system_table_t *system_tabl
 
     g_st = system_table;
     console_bind_writer(uefi_console_write);
+    console_bind_raw_writer(uefi_console_write_raw);
     console_bind_reader(uefi_console_read_line);
+    console_bind_clear(uefi_console_clear);
 
     /*
      * Optional visual boot splash.
@@ -261,6 +407,9 @@ efi_status_t efi_main(efi_handle_t image_handle, efi_system_table_t *system_tabl
      * this returns silently and the normal text-first boot continues.
      */
     vita_uefi_show_splash(image_handle, system_table);
+
+    /* Clear firmware/splash framebuffer artifacts before text console. */
+    uefi_console_clear();
 
     handoff.magic = VITA_BOOT_MAGIC;
     handoff.version = 1;
