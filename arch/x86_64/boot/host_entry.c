@@ -20,6 +20,30 @@ static void host_console_write(const char *text) {
     fflush(stdout);
 }
 
+static bool host_console_read_line(char *out, unsigned long out_cap) {
+    unsigned long n = 0;
+
+    if (!out || out_cap == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    if (!fgets(out, (int)out_cap, stdin)) {
+        return false;
+    }
+
+    while (out[n]) {
+        n++;
+    }
+
+    while (n > 0 && (out[n - 1] == '\n' || out[n - 1] == '\r')) {
+        out[--n] = '\0';
+    }
+
+    return true;
+}
+
 int main(int argc, char **argv) {
     vita_handoff_t handoff = {0};
     const char *seed_endpoint = NULL;
@@ -40,6 +64,7 @@ int main(int argc, char **argv) {
     handoff.uefi_system_table = 0;
 
     console_bind_writer(host_console_write);
+    console_bind_reader(host_console_read_line);
     kmain(&handoff);
     return 0;
 }
