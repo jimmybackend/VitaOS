@@ -1,6 +1,12 @@
 /*
  * kernel/hardware_discovery.c
- * Minimal F1A hardware discovery for the current slice.
+ * Minimal F1A/F1B hardware discovery for the current slice.
+ *
+ * Scope note:
+ * - Hosted builds use the host OS (/proc and /sys) for validation.
+ * - UEFI builds report firmware/PCI-visible capabilities only.
+ * - Mouse/network counts in UEFI mean "protocol/device presence detected";
+ *   they do not imply a VitaOS mouse driver or network stack is active yet.
  */
 
 #include <vita/hw.h>
@@ -12,6 +18,125 @@
 #include <string.h>
 #include <sys/utsname.h>
 #include <time.h>
+#else
+#define EFI_SUCCESS 0ULL
+
+typedef uint64_t efi_status_t;
+typedef void *efi_handle_t;
+
+typedef struct {
+    uint32_t data1;
+    uint16_t data2;
+    uint16_t data3;
+    uint8_t data4[8];
+} efi_guid_t;
+
+typedef struct {
+    uint64_t signature;
+    uint32_t revision;
+    uint32_t header_size;
+    uint32_t crc32;
+    uint32_t reserved;
+} efi_table_header_t;
+
+typedef struct efi_boot_services efi_boot_services_t;
+
+struct efi_boot_services {
+    efi_table_header_t hdr;
+
+    void *raise_tpl;
+    void *restore_tpl;
+
+    void *allocate_pages;
+    void *free_pages;
+    void *get_memory_map;
+    void *allocate_pool;
+    void *free_pool;
+
+    void *create_event;
+    void *set_timer;
+    void *wait_for_event;
+    void *signal_event;
+    void *close_event;
+    void *check_event;
+
+    void *install_protocol_interface;
+    void *reinstall_protocol_interface;
+    void *uninstall_protocol_interface;
+    void *handle_protocol;
+    void *reserved;
+    void *register_protocol_notify;
+    void *locate_handle;
+    void *locate_device_path;
+    void *install_configuration_table;
+
+    void *load_image;
+    void *start_image;
+    void *exit;
+    void *unload_image;
+    void *exit_boot_services;
+
+    void *get_next_monotonic_count;
+    void *stall;
+    void *set_watchdog_timer;
+
+    void *connect_controller;
+    void *disconnect_controller;
+
+    void *open_protocol;
+    void *close_protocol;
+    void *open_protocol_information;
+    void *protocols_per_handle;
+    void *locate_handle_buffer;
+
+    efi_status_t (*locate_protocol)(efi_guid_t *protocol,
+                                    void *registration,
+                                    void **interface);
+
+    void *install_multiple_protocol_interfaces;
+    void *uninstall_multiple_protocol_interfaces;
+    void *calculate_crc32;
+    void *copy_mem;
+    void *set_mem;
+    void *create_event_ex;
+};
+
+typedef struct {
+    efi_table_header_t hdr;
+    void *firmware_vendor;
+    uint32_t firmware_revision;
+    uint32_t _pad0;
+
+    efi_handle_t console_in_handle;
+    void *con_in;
+
+    efi_handle_t console_out_handle;
+    void *con_out;
+
+    efi_handle_t standard_error_handle;
+    void *std_err;
+
+    void *runtime_services;
+    efi_boot_services_t *boot_services;
+
+    uint64_t number_of_table_entries;
+    void *configuration_table;
+} efi_system_table_t;
+
+static efi_guid_t g_simple_pointer_protocol_guid = {
+    0x31878c87U, 0x0b75U, 0x11d5U,
+    {0x9aU, 0x4fU, 0x00U, 0x90U, 0x27U, 0x3fU, 0xc1U, 0x4dU}
+};
+
+static efi_guid_t g_absolute_pointer_protocol_guid = {
+    0x8d59d32bU, 0xc655U, 0x4ae9U,
+    {0x9bU, 0x15U, 0xf2U, 0x59U, 0x04U, 0x99U, 0x2aU, 0x43U}
+};
+
+static efi_guid_t g_simple_network_protocol_guid = {
+    0xa19832b9U, 0xac25U, 0x11d3U,
+    {0x9aU, 0x2dU, 0x00U, 0x90U, 0x27U, 0x3fU, 0xc1U, 0x4dU}
+};
 #endif
 
 static void mem_zero(void *ptr, unsigned long n) {
@@ -44,6 +169,53 @@ static void str_copy(char *dst, unsigned long cap, const char *src) {
 static int int_max(int a, int b) {
     return (a > b) ? a : b;
 }
+
+#ifndef VITA_HOSTED
+static bool uefi_protocol_present(const vita_handoff_t *handoff, efi_guid_t *protocol) {
+    efi_system_table_t *st;
+    void *interface = 0;
+
+    if (!handoff || !protocol || handoff->firmware_type != VITA_FIRMWARE_UEFI) {
+        return false;
+    }
+
+    st = (efi_system_table_t *)handoff->uefi_system_table;
+    if (!st || !st->boot_services || !st->boot_services->locate_protocol) {
+        return false;
+    }
+
+    return st->boot_services->locate_protocol(protocol, 0, &interface) == EFI_SUCCESS && interface != 0;
+}
+
+static void apply_uefi_protocol_snapshot(const vita_handoff_t *handoff,
+                                         vita_hw_snapshot_t *out_snapshot) {
+    bool pointer_present;
+    bool network_present;
+
+    if (!out_snapshot) {
+        return;
+    }
+
+    /*
+     * Protocol presence only. This is not a VitaOS input driver yet, but it
+     * tells the guided console that firmware exposes a pointer-capable path.
+     */
+    pointer_present = uefi_protocol_present(handoff, &g_simple_pointer_protocol_guid) ||
+                      uefi_protocol_present(handoff, &g_absolute_pointer_protocol_guid);
+    if (pointer_present) {
+        out_snapshot->mouse_count = int_max(out_snapshot->mouse_count, 1);
+    }
+
+    /*
+     * Protocol presence only. This does not mean DHCP, TCP/IP, Wi-Fi auth, or
+     * a VitaOS network stack is active. It is a safe F1B readiness signal.
+     */
+    network_present = uefi_protocol_present(handoff, &g_simple_network_protocol_guid);
+    if (network_present) {
+        out_snapshot->net_count = int_max(out_snapshot->net_count, 1);
+    }
+}
+#endif
 
 /*
  * Keep the PCI snapshot out of the UEFI stack.
@@ -400,6 +572,8 @@ bool hw_discovery_run(const vita_handoff_t *handoff, vita_hw_snapshot_t *out_sna
     out_snapshot->display_count = 1;
     out_snapshot->keyboard_count = 1;
     out_snapshot->detected_at_unix = 0;
+
+    apply_uefi_protocol_snapshot(handoff, out_snapshot);
 #endif
 
     apply_pci_snapshot(out_snapshot);
