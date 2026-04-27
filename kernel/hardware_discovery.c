@@ -45,17 +45,24 @@ static int int_max(int a, int b) {
     return (a > b) ? a : b;
 }
 
+/*
+ * Keep the PCI snapshot out of the UEFI stack.
+ * The Windows/UEFI target emits __chkstk for large stack frames,
+ * but VitaOS is freestanding and does not link a host runtime.
+ */
+static vita_pci_snapshot_t g_pci_snapshot;
+
 static void apply_pci_snapshot(vita_hw_snapshot_t *out_snapshot) {
-    vita_pci_snapshot_t pci;
+    vita_pci_snapshot_t *pci = &g_pci_snapshot;
     int pci_net_count;
 
     if (!out_snapshot) {
         return;
     }
 
-    mem_zero(&pci, sizeof(pci));
+    mem_zero(pci, sizeof(*pci));
 
-    if (!pci_discovery_run(&pci)) {
+    if (!pci_discovery_run(pci)) {
         return;
     }
 
@@ -65,18 +72,18 @@ static void apply_pci_snapshot(vita_hw_snapshot_t *out_snapshot) {
      * be double-counted. Use PCI to fill typed/controller counters and as a
      * lower bound for aggregate counters when the hosted view is unavailable.
      */
-    out_snapshot->display_count = int_max(out_snapshot->display_count, (int)pci.display_count);
-    out_snapshot->ethernet_count = int_max(out_snapshot->ethernet_count, (int)pci.ethernet_count);
-    out_snapshot->wifi_count = int_max(out_snapshot->wifi_count, (int)pci.wifi_count);
+    out_snapshot->display_count = int_max(out_snapshot->display_count, (int)pci->display_count);
+    out_snapshot->ethernet_count = int_max(out_snapshot->ethernet_count, (int)pci->ethernet_count);
+    out_snapshot->wifi_count = int_max(out_snapshot->wifi_count, (int)pci->wifi_count);
     out_snapshot->usb_controller_count = int_max(out_snapshot->usb_controller_count,
-                                                 (int)pci.usb_controller_count);
-    out_snapshot->audio_count = int_max(out_snapshot->audio_count, (int)pci.audio_count);
+                                                 (int)pci->usb_controller_count);
+    out_snapshot->audio_count = int_max(out_snapshot->audio_count, (int)pci->audio_count);
 
     if (out_snapshot->storage_count == 0) {
-        out_snapshot->storage_count = (int)pci.storage_count;
+        out_snapshot->storage_count = (int)pci->storage_count;
     }
 
-    pci_net_count = (int)(pci.ethernet_count + pci.wifi_count);
+    pci_net_count = (int)(pci->ethernet_count + pci->wifi_count);
     out_snapshot->net_count = int_max(out_snapshot->net_count, pci_net_count);
 
     /*

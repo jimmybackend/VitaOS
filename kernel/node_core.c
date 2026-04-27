@@ -225,13 +225,10 @@ static void send_control_message(const char *endpoint, const char *message) {
     udp_send(fd, &target, message);
     close(fd);
 }
-#endif
 
 static void ensure_peer_defaults(void) {
     if (!g_peer_valid) {
-#ifdef VITA_HOSTED
         mem_zero(&g_peer, sizeof(g_peer));
-#endif
         copy_text(g_peer.peer_id, sizeof(g_peer.peer_id), "peer-unknown");
         copy_text(g_peer.transport, sizeof(g_peer.transport), "udp/ipv4-hosted");
         copy_text(g_peer.capabilities_json, sizeof(g_peer.capabilities_json), "{}");
@@ -265,7 +262,6 @@ static void create_link_proposal_if_needed(void) {
     }
 }
 
-#ifdef VITA_HOSTED
 static void handle_message(const char *msg) {
     ensure_peer_defaults();
 

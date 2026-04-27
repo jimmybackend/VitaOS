@@ -24,6 +24,7 @@ static void mem_zero(void *ptr, unsigned long n) {
     }
 }
 
+#ifdef VITA_HOSTED
 static void str_copy(char *dst, unsigned long cap, const char *src) {
     unsigned long i = 0;
 
@@ -130,7 +131,6 @@ static void update_counts(vita_pci_snapshot_t *snapshot, vita_pci_device_kind_t 
     }
 }
 
-#ifdef VITA_HOSTED
 static bool read_hex_u16_file(const char *path, uint16_t *out) {
     FILE *f;
     unsigned int value = 0;
