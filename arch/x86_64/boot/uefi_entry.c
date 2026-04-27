@@ -11,13 +11,16 @@
 
 #include "uefi_splash.h"
 
-#define EFI_SUCCESS 0
+#define EFI_SUCCESS 0ULL
 
 typedef uint64_t efi_status_t;
 typedef void *efi_handle_t;
+typedef void *efi_event_t;
 typedef uint16_t char16_t;
 
+typedef struct efi_simple_text_input_protocol efi_simple_text_input_protocol_t;
 typedef struct efi_simple_text_output_protocol efi_simple_text_output_protocol_t;
+typedef struct efi_boot_services efi_boot_services_t;
 
 typedef struct {
     uint64_t signature;
@@ -28,26 +31,76 @@ typedef struct {
 } efi_table_header_t;
 
 typedef struct {
-    efi_table_header_t hdr;
-    char16_t *firmware_vendor;
-    uint32_t firmware_revision;
-    uint32_t _pad0;
-    efi_handle_t console_in_handle;
-    void *con_in;
-    efi_handle_t console_out_handle;
-    efi_simple_text_output_protocol_t *con_out;
-} efi_system_table_t;
+    uint16_t scan_code;
+    char16_t unicode_char;
+} efi_input_key_t;
+
+struct efi_simple_text_input_protocol {
+    efi_status_t (*reset)(efi_simple_text_input_protocol_t *self, uint8_t extended_verification);
+    efi_status_t (*read_key_stroke)(efi_simple_text_input_protocol_t *self, efi_input_key_t *key);
+    efi_event_t wait_for_key;
+};
 
 struct efi_simple_text_output_protocol {
     efi_status_t (*reset)(efi_simple_text_output_protocol_t *self, uint8_t extended_verification);
     efi_status_t (*output_string)(efi_simple_text_output_protocol_t *self, char16_t *string);
 };
 
+struct efi_boot_services {
+    efi_table_header_t hdr;
+    void *raise_tpl;
+    void *restore_tpl;
+    void *allocate_pages;
+    void *free_pages;
+    void *get_memory_map;
+    void *allocate_pool;
+    void *free_pool;
+    void *create_event;
+    void *set_timer;
+    efi_status_t (*wait_for_event)(uint64_t number_of_events, efi_event_t *event, uint64_t *index);
+    void *signal_event;
+    void *close_event;
+    efi_status_t (*check_event)(efi_event_t event);
+    void *install_protocol_interface;
+    void *reinstall_protocol_interface;
+    void *uninstall_protocol_interface;
+    void *handle_protocol;
+    void *reserved;
+    void *register_protocol_notify;
+    void *locate_handle;
+    void *locate_device_path;
+    void *install_configuration_table;
+    void *load_image;
+    void *start_image;
+    void *exit;
+    void *unload_image;
+    void *exit_boot_services;
+    void *get_next_monotonic_count;
+    efi_status_t (*stall)(uint64_t microseconds);
+};
+
+typedef struct {
+    efi_table_header_t hdr;
+    char16_t *firmware_vendor;
+    uint32_t firmware_revision;
+    uint32_t _pad0;
+    efi_handle_t console_in_handle;
+    efi_simple_text_input_protocol_t *con_in;
+    efi_handle_t console_out_handle;
+    efi_simple_text_output_protocol_t *con_out;
+    efi_handle_t standard_error_handle;
+    efi_simple_text_output_protocol_t *std_err;
+    void *runtime_services;
+    efi_boot_services_t *boot_services;
+    uint64_t number_of_table_entries;
+    void *configuration_table;
+} efi_system_table_t;
+
 void kmain(const vita_handoff_t *handoff);
 
 static efi_system_table_t *g_st = 0;
 
-static void ascii_to_char16(const char *src, char16_t *dst, size_t dst_cap) {
+static void ascii_to_char16(const char *src, char16_t *dst, size_t dst_cap, uint8_t append_newline) {
     size_t i = 0;
 
     if (!dst || dst_cap == 0) {
@@ -64,9 +117,23 @@ static void ascii_to_char16(const char *src, char16_t *dst, size_t dst_cap) {
         i++;
     }
 
-    dst[i++] = '\r';
-    dst[i++] = '\n';
+    if (append_newline && i + 2 < dst_cap) {
+        dst[i++] = '\r';
+        dst[i++] = '\n';
+    }
+
     dst[i] = 0;
+}
+
+static void uefi_output_raw(const char *text) {
+    char16_t buffer[256];
+
+    if (!g_st || !g_st->con_out || !g_st->con_out->output_string) {
+        return;
+    }
+
+    ascii_to_char16(text, buffer, sizeof(buffer) / sizeof(buffer[0]), 0);
+    g_st->con_out->output_string(g_st->con_out, buffer);
 }
 
 static void uefi_console_write(const char *text) {
@@ -76,8 +143,109 @@ static void uefi_console_write(const char *text) {
         return;
     }
 
-    ascii_to_char16(text, buffer, sizeof(buffer) / sizeof(buffer[0]));
+    ascii_to_char16(text, buffer, sizeof(buffer) / sizeof(buffer[0]), 1);
     g_st->con_out->output_string(g_st->con_out, buffer);
+}
+
+static void uefi_echo_char(char c) {
+    char text[2];
+
+    text[0] = c;
+    text[1] = '\0';
+    uefi_output_raw(text);
+}
+
+static void uefi_poll_delay(void) {
+    volatile unsigned long i;
+
+    if (g_st && g_st->boot_services && g_st->boot_services->stall) {
+        g_st->boot_services->stall(10000ULL);
+        return;
+    }
+
+    for (i = 0; i < 200000UL; ++i) {
+        __asm__ __volatile__("pause");
+    }
+}
+
+static bool uefi_try_read_key(efi_input_key_t *key) {
+    if (!key || !g_st || !g_st->con_in || !g_st->con_in->read_key_stroke) {
+        return false;
+    }
+
+    return g_st->con_in->read_key_stroke(g_st->con_in, key) == EFI_SUCCESS;
+}
+
+static bool uefi_allowed_input_char(char c) {
+    if (c >= 'a' && c <= 'z') {
+        return true;
+    }
+    if (c >= 'A' && c <= 'Z') {
+        return true;
+    }
+    if (c >= '0' && c <= '9') {
+        return true;
+    }
+    if (c == ' ' || c == '-' || c == '_' || c == '.' || c == '/') {
+        return true;
+    }
+    return false;
+}
+
+static bool uefi_console_read_line(char *out, unsigned long out_cap) {
+    unsigned long len = 0;
+    unsigned long idle_polls = 0;
+    efi_input_key_t key;
+
+    if (!out || out_cap == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    if (!g_st || !g_st->con_in || !g_st->con_in->read_key_stroke) {
+        return false;
+    }
+
+    for (;;) {
+        key.scan_code = 0;
+        key.unicode_char = 0;
+
+        if (!uefi_try_read_key(&key)) {
+            idle_polls++;
+            if (idle_polls >= 6000UL) {
+                return false;
+            }
+            uefi_poll_delay();
+            continue;
+        }
+
+        idle_polls = 0;
+
+        if (key.unicode_char == 13 || key.unicode_char == 10) {
+            out[len] = '\0';
+            uefi_output_raw("\r\n");
+            return true;
+        }
+
+        if (key.unicode_char == 8 || key.unicode_char == 127) {
+            if (len > 0) {
+                len--;
+                out[len] = '\0';
+                uefi_output_raw("\b \b");
+            }
+            continue;
+        }
+
+        if (key.unicode_char < 128) {
+            char c = (char)key.unicode_char;
+            if (uefi_allowed_input_char(c) && (len + 1) < out_cap) {
+                out[len++] = c;
+                out[len] = '\0';
+                uefi_echo_char(c);
+            }
+        }
+    }
 }
 
 efi_status_t efi_main(efi_handle_t image_handle, efi_system_table_t *system_table) {
@@ -85,6 +253,7 @@ efi_status_t efi_main(efi_handle_t image_handle, efi_system_table_t *system_tabl
 
     g_st = system_table;
     console_bind_writer(uefi_console_write);
+    console_bind_reader(uefi_console_read_line);
 
     /*
      * Optional visual boot splash.
