@@ -4,7 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define VITA_CONSOLE_LINE_MAX 128U
+
 typedef void (*vita_console_write_fn)(const char *text);
+typedef bool (*vita_console_read_line_fn)(char *out, unsigned long out_cap);
 
 typedef struct {
     const char *arch_name;
@@ -35,8 +38,10 @@ typedef struct {
 } vita_console_state_t;
 
 void console_bind_writer(vita_console_write_fn writer);
+void console_bind_reader(vita_console_read_line_fn reader);
 void console_early_init(void);
 void console_write_line(const char *text);
+bool console_read_line(char *out, unsigned long out_cap);
 
 void console_banner(const vita_boot_status_t *status);
 
