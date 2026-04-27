@@ -7,6 +7,7 @@
  * - guided console
  * - proposal engine boot integration
  * - minimal hosted VitaNet start
+ * - shared hosted/UEFI command loop
  */
 
 #include <stdbool.h>
@@ -14,15 +15,11 @@
 
 #include <vita/audit.h>
 #include <vita/boot.h>
+#include <vita/command.h>
 #include <vita/console.h>
 #include <vita/hw.h>
 #include <vita/node.h>
 #include <vita/proposal.h>
-
-#ifdef VITA_HOSTED
-#include <termios.h>
-#include <unistd.h>
-#endif
 
 void panic_fatal(const char *reason);
 
@@ -161,38 +158,11 @@ static void console_fill_state(vita_console_state_t *state,
     state->mode = state->audit_ready ? VITA_CONSOLE_MODE_GUIDED : VITA_CONSOLE_MODE_AUDIT;
 }
 
-#ifdef VITA_HOSTED
-static bool hosted_repl_allowed(void) {
-    int fd = 0;
-    pid_t fg_pgrp;
-    pid_t self_pgrp;
-
-    if (isatty(fd) == 0) {
-        return false;
-    }
-
-    fg_pgrp = tcgetpgrp(fd);
-    if (fg_pgrp < 0) {
-        return false;
-    }
-
-    self_pgrp = getpgrp();
-    if (self_pgrp < 0) {
-        return false;
-    }
-
-    return fg_pgrp == self_pgrp;
-}
-#else
-static bool hosted_repl_allowed(void) {
-    return false;
-}
-#endif
-
 void kmain(const vita_handoff_t *handoff) {
     vita_boot_status_t boot_status;
     vita_hw_snapshot_t hw;
     vita_console_state_t console_state;
+    vita_command_context_t command_ctx;
     bool hw_ready = false;
     bool proposal_ready = false;
     bool node_ready = false;
@@ -200,6 +170,7 @@ void kmain(const vita_handoff_t *handoff) {
     mem_zero(&boot_status, sizeof(boot_status));
     mem_zero(&hw, sizeof(hw));
     mem_zero(&console_state, sizeof(console_state));
+    mem_zero(&command_ctx, sizeof(command_ctx));
 
     boot_status.arch_name = "unknown";
     boot_status.console_ready = true;
@@ -244,13 +215,15 @@ void kmain(const vita_handoff_t *handoff) {
 
     console_banner(&boot_status);
 
-    if (boot_status.audit_ready) {
-        proposal_generate_initial(handoff, hw_ready ? &hw : 0, true);
-        proposal_ready = true;
-        audit_emit_boot_event("PROPOSAL_ENGINE_READY", "initial proposals generated");
-    } else {
-        audit_emit_boot_event("PROPOSAL_ENGINE_DEFERRED", "audit required before operational proposal flow");
-    }
+    /*
+     * Keep proposals available in memory even in restricted UEFI diagnostic
+     * mode. The audit backend persists them only when available.
+     */
+    proposal_generate_initial(handoff, hw_ready ? &hw : 0, boot_status.audit_ready);
+    proposal_ready = true;
+    audit_emit_boot_event(
+        boot_status.audit_ready ? "PROPOSAL_ENGINE_READY" : "PROPOSAL_ENGINE_RESTRICTED_READY",
+        boot_status.audit_ready ? "initial proposals generated" : "initial proposals generated in restricted mode");
 
     if (boot_status.audit_ready && handoff->firmware_type == VITA_FIRMWARE_HOSTED) {
         node_ready = node_core_start(handoff);
@@ -271,6 +244,7 @@ void kmain(const vita_handoff_t *handoff) {
         console_write_line("Operational mode blocked / Modo operativo bloqueado");
         console_write_line("Persistent audit is required before full guided operation.");
         console_write_line("La auditoria persistente es obligatoria antes del modo operativo completo.");
+        console_write_line("Local diagnostic commands remain available / Los comandos locales de diagnostico siguen disponibles.");
     } else {
         proposal_show_all();
 
@@ -283,16 +257,16 @@ void kmain(const vita_handoff_t *handoff) {
         }
     }
 
+    command_context_init(&command_ctx,
+                         handoff,
+                         &boot_status,
+                         hw_ready ? &hw : 0,
+                         hw_ready,
+                         proposal_ready,
+                         node_ready);
+    command_loop_run(&command_ctx);
+
     if (handoff->firmware_type == VITA_FIRMWARE_HOSTED) {
-        if (boot_status.audit_ready) {
-            if (hosted_repl_allowed()) {
-                audit_emit_boot_event("HOSTED_REPL_STARTED", "hosted proposal repl started");
-                proposal_hosted_repl();
-            } else {
-                console_write_line("Hosted REPL skipped (non-interactive session).");
-                audit_emit_boot_event("HOSTED_REPL_SKIPPED", "non-interactive session");
-            }
-        }
         return;
     }
 
