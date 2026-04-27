@@ -10,11 +10,13 @@
 #include <stdlib.h>
 #endif
 
+#ifndef VITA_HOSTED
 static void panic_halt_forever(void) {
     for (;;) {
         __asm__ __volatile__("hlt");
     }
 }
+#endif
 
 void panic_fatal(const char *reason) {
     audit_emit_boot_event("PANIC_FATAL", reason ? reason : "unknown");

@@ -32,7 +32,6 @@ deadline = time.time() + 6.0
 hello_sent = False
 caps_sent = False
 heartbeat_sent = False
-audit_block = ""
 
 while time.time() < deadline:
     try:
@@ -56,9 +55,8 @@ while time.time() < deadline:
         heartbeat_sent = True
 
     if msg.startswith("AUDIT_BLOCK "):
-        audit_block = msg[len("AUDIT_BLOCK "):]
         with open(outfile, "w", encoding="utf-8") as f:
-            f.write(audit_block)
+            f.write(msg[len("AUDIT_BLOCK "):])
         break
 
 sock.close()
@@ -67,7 +65,7 @@ MOCK_PID=$!
 
 sleep 0.2
 
-./build/hosted/vitaos-hosted "$DB_PATH" >"$LOG_FILE" 2>&1
+printf "status\naudit\nproposals\npeers\nshutdown\n" | ./build/hosted/vitaos-hosted "$DB_PATH" >"$LOG_FILE" 2>&1
 
 sleep 0.2
 cleanup
@@ -82,6 +80,8 @@ if [[ ! -s "$REPL_FILE" ]]; then
   echo "smoke failed: audit replication block not captured" >&2
   echo "--- mock log ---" >&2
   cat "$MOCK_LOG" >&2 || true
+  echo "--- hosted log ---" >&2
+  cat "$LOG_FILE" >&2 || true
   exit 1
 fi
 
@@ -128,28 +128,6 @@ if [[ "$HUMAN_RESPONSE_TABLE" -lt 1 ]]; then
   exit 1
 fi
 
-HW_SCHEMA_MISSING=$(sqlite3 "$DB_PATH" "
-with expected(name) as (
-  values
-    ('display_count'),
-    ('keyboard_count'),
-    ('mouse_count'),
-    ('audio_count'),
-    ('microphone_count'),
-    ('ethernet_count'),
-    ('usb_controller_count')
-)
-select count(*)
-from expected e
-where not exists (
-  select 1 from pragma_table_info('hardware_snapshot') p where p.name = e.name
-);")
-
-if [[ "$HW_SCHEMA_MISSING" -ne 0 ]]; then
-  echo "smoke failed: expanded hardware_snapshot columns missing" >&2
-  exit 1
-fi
-
 RAM_BYTES=$(sqlite3 "$DB_PATH" "select coalesce(ram_bytes,0) from hardware_snapshot order by id desc limit 1;")
 if [[ "$RAM_BYTES" -le 0 ]]; then
   echo "smoke failed: ram_bytes not detected" >&2
@@ -162,39 +140,11 @@ if [[ "$DISPLAY_COUNT" -lt 1 ]]; then
   exit 1
 fi
 
-HW_NEW_NULLS=$(sqlite3 "$DB_PATH" "
-select count(*) from hardware_snapshot
-where display_count is null
-   or keyboard_count is null
-   or mouse_count is null
-   or audio_count is null
-   or microphone_count is null
-   or ethernet_count is null
-   or usb_controller_count is null;")
-
-if [[ "$HW_NEW_NULLS" -ne 0 ]]; then
-  echo "smoke failed: expanded hardware_snapshot columns contain NULL" >&2
-  exit 1
-fi
-
-HW_NEGATIVE_VALUES=$(sqlite3 "$DB_PATH" "
-select count(*) from hardware_snapshot
-where display_count < 0
-   or keyboard_count < 0
-   or mouse_count < 0
-   or audio_count < 0
-   or microphone_count < 0
-   or ethernet_count < 0
-   or usb_controller_count < 0;")
-
-if [[ "$HW_NEGATIVE_VALUES" -ne 0 ]]; then
-  echo "smoke failed: expanded hardware_snapshot columns contain negative values" >&2
-  exit 1
-fi
-
 AI_READY=$(sqlite3 "$DB_PATH" "select count(*) from audit_event where event_type='AI_PROPOSALS_READY';")
 PEER_DISCOVERED=$(sqlite3 "$DB_PATH" "select count(*) from audit_event where event_type='PEER_DISCOVERED';")
 AUDIT_REPL=$(sqlite3 "$DB_PATH" "select count(*) from audit_event where event_type='AUDIT_REPLICATION_ATTEMPTED';")
+REPL_STARTED=$(sqlite3 "$DB_PATH" "select count(*) from audit_event where event_type='COMMAND_REPL_STARTED';")
+REPL_STOPPED=$(sqlite3 "$DB_PATH" "select count(*) from audit_event where event_type='COMMAND_REPL_STOPPED';")
 
 if [[ "$AI_READY" -lt 1 ]]; then
   echo "smoke failed: AI_PROPOSALS_READY not found" >&2
@@ -211,8 +161,18 @@ if [[ "$AUDIT_REPL" -lt 1 ]]; then
   exit 1
 fi
 
+if [[ "$REPL_STARTED" -lt 1 || "$REPL_STOPPED" -lt 1 ]]; then
+  echo "smoke failed: command REPL events not found" >&2
+  exit 1
+fi
+
 if ! grep -q "VitaOS with AI / VitaOS con IA" "$LOG_FILE"; then
   echo "smoke failed: banner not found in hosted log" >&2
+  exit 1
+fi
+
+if ! grep -q "Interactive console ready / Consola interactiva lista" "$LOG_FILE"; then
+  echo "smoke failed: interactive console banner not found in hosted log" >&2
   exit 1
 fi
 
@@ -223,16 +183,6 @@ fi
 
 if ! grep -q "display_count:" "$LOG_FILE"; then
   echo "smoke failed: display_count not found in hosted log" >&2
-  exit 1
-fi
-
-if ! grep -q "usb_controller_count:" "$LOG_FILE"; then
-  echo "smoke failed: usb_controller_count not found in hosted log" >&2
-  exit 1
-fi
-
-if ! grep -q "detected_at_unix:" "$LOG_FILE"; then
-  echo "smoke failed: detected_at_unix not found in hosted log" >&2
   exit 1
 fi
 

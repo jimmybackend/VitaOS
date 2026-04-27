@@ -176,7 +176,9 @@ void command_context_init(vita_command_context_t *ctx,
     ctx->node_ready = node_ready;
 
     if (boot_status) {
-        ctx->boot_status = *boot_status;
+        ctx->boot_status.arch_name = boot_status->arch_name;
+        ctx->boot_status.console_ready = boot_status->console_ready;
+        ctx->boot_status.audit_ready = boot_status->audit_ready;
     } else {
         ctx->boot_status.arch_name = "unknown";
         ctx->boot_status.console_ready = false;
@@ -184,7 +186,38 @@ void command_context_init(vita_command_context_t *ctx,
     }
 
     if (hw_snapshot) {
-        ctx->hw_snapshot = *hw_snapshot;
+        unsigned long i;
+
+        for (i = 0; i < sizeof(ctx->hw_snapshot.cpu_arch); ++i) {
+            ctx->hw_snapshot.cpu_arch[i] = hw_snapshot->cpu_arch[i];
+        }
+
+        for (i = 0; i < sizeof(ctx->hw_snapshot.cpu_model); ++i) {
+            ctx->hw_snapshot.cpu_model[i] = hw_snapshot->cpu_model[i];
+        }
+
+        ctx->hw_snapshot.ram_bytes = hw_snapshot->ram_bytes;
+
+        for (i = 0; i < sizeof(ctx->hw_snapshot.firmware_type); ++i) {
+            ctx->hw_snapshot.firmware_type[i] = hw_snapshot->firmware_type[i];
+        }
+
+        for (i = 0; i < sizeof(ctx->hw_snapshot.console_type); ++i) {
+            ctx->hw_snapshot.console_type[i] = hw_snapshot->console_type[i];
+        }
+
+        ctx->hw_snapshot.display_count = hw_snapshot->display_count;
+        ctx->hw_snapshot.keyboard_count = hw_snapshot->keyboard_count;
+        ctx->hw_snapshot.mouse_count = hw_snapshot->mouse_count;
+        ctx->hw_snapshot.audio_count = hw_snapshot->audio_count;
+        ctx->hw_snapshot.microphone_count = hw_snapshot->microphone_count;
+        ctx->hw_snapshot.net_count = hw_snapshot->net_count;
+        ctx->hw_snapshot.ethernet_count = hw_snapshot->ethernet_count;
+        ctx->hw_snapshot.wifi_count = hw_snapshot->wifi_count;
+        ctx->hw_snapshot.storage_count = hw_snapshot->storage_count;
+        ctx->hw_snapshot.usb_count = hw_snapshot->usb_count;
+        ctx->hw_snapshot.usb_controller_count = hw_snapshot->usb_controller_count;
+        ctx->hw_snapshot.detected_at_unix = hw_snapshot->detected_at_unix;
     }
 
     ctx->console_state.arch_name = safe_text(ctx->boot_status.arch_name, "unknown");
