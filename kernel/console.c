@@ -6,6 +6,7 @@
 #include <vita/console.h>
 
 static vita_console_write_fn g_console_writer = 0;
+static vita_console_read_line_fn g_console_reader = 0;
 
 static void str_copy(char *dst, unsigned long cap, const char *src) {
     unsigned long i = 0;
@@ -34,7 +35,7 @@ static void str_append(char *dst, unsigned long cap, const char *src) {
         return;
     }
 
-    while (dst[i] && i < cap) {
+    while (i < cap && dst[i]) {
         i++;
     }
 
@@ -116,8 +117,12 @@ void console_bind_writer(vita_console_write_fn writer) {
     g_console_writer = writer;
 }
 
+void console_bind_reader(vita_console_read_line_fn reader) {
+    g_console_reader = reader;
+}
+
 void console_early_init(void) {
-    /* Early console writer is provided by architecture boot stage. */
+    /* Early console writer/reader are provided by architecture boot stage. */
 }
 
 void console_write_line(const char *text) {
@@ -125,6 +130,20 @@ void console_write_line(const char *text) {
         return;
     }
     g_console_writer(text);
+}
+
+bool console_read_line(char *out, unsigned long out_cap) {
+    if (!out || out_cap == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    if (!g_console_reader) {
+        return false;
+    }
+
+    return g_console_reader(out, out_cap);
 }
 
 void console_banner(const vita_boot_status_t *status) {
@@ -201,14 +220,14 @@ void console_guided_show_help(void) {
     console_write_line("Help / Ayuda:");
     console_write_line("status      -> show current guided status");
     console_write_line("hw          -> show hardware summary when available");
-    console_write_line("audit       -> show audit readiness and review entry");
+    console_write_line("audit       -> show audit readiness and restricted-mode note");
     console_write_line("peers       -> show cooperative nodes summary");
     console_write_line("proposals   -> list current system proposals");
     console_write_line("emergency   -> enter emergency-oriented flow");
     console_write_line("helpme      -> show this help and guided menu");
     console_write_line("approve ID  -> approve a proposal");
     console_write_line("reject ID   -> reject a proposal");
-    console_write_line("shutdown    -> stop current hosted session");
+    console_write_line("shutdown    -> stop current command session");
 }
 
 void console_guided_show_status(const vita_console_state_t *state) {
