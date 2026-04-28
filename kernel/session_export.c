@@ -13,25 +13,13 @@
 #define SESSION_EXPORT_PATH "/vita/export/reports/last-session.txt"
 #define SESSION_EXPORT_BUFFER_MAX 4096U
 
+static char g_session_export_buffer[SESSION_EXPORT_BUFFER_MAX];
+
 typedef struct {
     char *buf;
     unsigned long cap;
     unsigned long len;
 } report_builder_t;
-
-static unsigned long str_len(const char *s) {
-    unsigned long n = 0;
-
-    if (!s) {
-        return 0;
-    }
-
-    while (s[n]) {
-        n++;
-    }
-
-    return n;
-}
 
 static const char *safe_text(const char *text, const char *fallback) {
     if (text && text[0]) {
@@ -232,7 +220,6 @@ static void append_notes(report_builder_t *rb) {
 }
 
 bool session_export_write_report(const vita_command_context_t *ctx) {
-    char report[SESSION_EXPORT_BUFFER_MAX];
     report_builder_t rb;
     vita_storage_status_t st;
 
@@ -241,7 +228,7 @@ bool session_export_write_report(const vita_command_context_t *ctx) {
         return false;
     }
 
-    rb_init(&rb, report, sizeof(report));
+    rb_init(&rb, g_session_export_buffer, sizeof(g_session_export_buffer));
 
     rb_line(&rb, "VitaOS session summary / Resumen de sesion VitaOS");
     rb_line(&rb, "version: f1a-f1b-session-export-v1");
@@ -275,7 +262,7 @@ bool session_export_write_report(const vita_command_context_t *ctx) {
 
     audit_emit_boot_event("SESSION_EXPORT_REQUESTED", SESSION_EXPORT_PATH);
 
-    if (storage_write_text(SESSION_EXPORT_PATH, report)) {
+    if (storage_write_text(SESSION_EXPORT_PATH, g_session_export_buffer)) {
         console_write_line("export session: written");
         console_write_line(SESSION_EXPORT_PATH);
         audit_emit_boot_event("SESSION_EXPORT_WRITTEN", SESSION_EXPORT_PATH);

@@ -119,7 +119,7 @@ vitaos/
 - `clang`
 - `sqlite3`
 - `libsqlite3`
-- `python3`
+- `sha256sum` (coreutils)
 
 ## Build
 
@@ -284,6 +284,9 @@ Reglas de trabajo activas:
 ## Documentos recomendados
 
 - `docs/VitaOS-SPEC.md`
+- `docs/history/applied-patches.md`
+- `docs/tools/no-python-runtime.md`
+- `docs/validation/f1a-f1b-validation-checklist.md`
 - `AGENTS.md`
 - `schema/audit.sql`
 
@@ -295,3 +298,10 @@ Antes de generar o modificar código:
 3. no asumir APIs o estructuras inexistentes;
 4. preservar la trazabilidad de auditoría;
 5. devolver código completo cuando se pida.
+
+## Política no-Python
+
+VitaOS no usa Python como dependencia de runtime/build obligatorio del sistema.
+
+
+Ver: `docs/tools/no-python-runtime.md`.

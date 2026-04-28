@@ -21,4 +21,10 @@ bool audit_persist_human_response(const char *proposal_id, const char *response)
 bool audit_upsert_node_peer(const vita_node_peer_t *peer);
 bool audit_export_recent_event_block(char *out, unsigned long out_cap);
 
+bool audit_readiness_report(char *out, unsigned long out_cap);
+bool audit_verify_current_chain(char *out, unsigned long out_cap);
+bool audit_export_verify_report(const char *txt_path, const char *jsonl_path);
+bool audit_export_current_session_events(const char *txt_path, const char *jsonl_path);
+bool audit_sqlite_summary(char *out, unsigned long out_cap);
+
 #endif

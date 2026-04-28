@@ -36,10 +36,21 @@ COMMON_KERNEL := \
 	kernel/hardware_discovery.c \
 	kernel/pci_discovery.c \
 	kernel/proposal.c \
-	kernel/node_core.c
+	kernel/node_core.c \
+	kernel/ai_gateway.c \
+	kernel/storage.c \
+	kernel/editor.c \
+	kernel/session_export.c \
+	kernel/session_jsonl_export.c \
+	kernel/session_journal.c \
+	kernel/power.c \
+	kernel/net_status.c \
+	kernel/net_connect.c
 
 EFI_SOURCES := \
 	arch/x86_64/boot/uefi_entry.c \
+	arch/x86_64/boot/uefi_neon_frame.c \
+	arch/x86_64/boot/uefi_neon_text.c \
 	arch/x86_64/boot/uefi_splash.c \
 	$(COMMON_KERNEL)
 

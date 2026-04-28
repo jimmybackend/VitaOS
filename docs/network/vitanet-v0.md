@@ -42,7 +42,7 @@ Este slice implementa **solo en hosted** una base mínima verificable de VitaNet
 ## Limitaciones explícitas
 
 - UEFI freestanding aún no incluye networking completo en F1B inicial.
-- El peer real en pruebas se provee con harness (`tools/test/vitanet-peer.py`).
+- El peer de prueba para smoke se levanta con un harness C temporal embebido en `tools/test/smoke-audit.sh` (sin dependencia Python).
 - No hay cifrado/consenso ni replicación distribuida avanzada en este slice.
 
 ## Base para `node_task`
