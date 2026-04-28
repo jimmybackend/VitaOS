@@ -195,9 +195,3 @@ No incluido por diseño en este milestone:
 - Estado actual: **Integrated**.
 - Regla crítica aplicada: no se reporta `storage verified`, `journal active` o `written/saved` sin verificación real de escritura persistente.
 - Límite: validación de USB física en hardware real sigue siendo obligatoria.
-
-## v35 rufus uefi writable fs hardening
-- Feature: selección mínima de backend UEFI FAT escribible para flujos ISO/Rufus (sin VFS amplio).
-- Vive en: `kernel/storage.c`, `kernel/kmain.c`, `kernel/session_journal.c`, validadores y docs de storage.
-- Estado actual: **Integrated**.
-- Regla crítica aplicada: si no hay FS UEFI writable verificado (write->read->compare), el bootstrap falla de forma honesta y no se reporta modo operativo persistente.

@@ -297,13 +297,9 @@ static void show_hw(const vita_command_context_t *ctx) {
 
 static void show_audit(const vita_command_context_t *ctx) {
     vita_storage_status_t st;
-    bool hosted = ctx && ctx->handoff && ctx->handoff->firmware_type == VITA_FIRMWARE_HOSTED;
 
     console_write_line("Audit / Auditoria:");
     storage_get_status(&st);
-    console_write_line(hosted
-        ? "audit sqlite: hosted backend"
-        : "audit sqlite: hosted only / unavailable in UEFI");
 
     if (ctx && ctx->boot_status.audit_ready) {
         console_write_line("Audit SQLite: READY / Auditoria SQLite: LISTA");

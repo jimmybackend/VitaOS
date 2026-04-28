@@ -9,10 +9,6 @@ Garantizar que `storage`, `notes`, `journal` y `exports` no reporten éxito si l
 ## Requisitos de implementación
 
 - VitaOS ejecuta **bootstrap automático de storage en boot** (`storage_bootstrap_persistent_tree()`).
-- En UEFI, VitaOS intenta seleccionar un `EFI Simple File System` realmente escribible:
-  - enumera candidatos FAT;
-  - intenta write->read->compare de marcador en cada candidato;
-  - selecciona backend solo si la verificación pasa.
 - El bootstrap crea el árbol `/vita` completo usando la lista única de directorios esperados.
 - El bootstrap ejecuta `storage_tree_repair()` + `storage_tree_check()` + marcador `write -> read -> compare` en:
   - `/vita/tmp/boot-storage-verify.txt`
@@ -81,7 +77,6 @@ shutdown
   - `journal: inactive`
   - `audit persistence: restricted diagnostic`
 - No depende de crear carpetas manualmente en Windows.
-- UEFI no promete SQLite persistente; en ese modo la persistencia mínima es `journal/jsonl` cuando el FS es escribible y verificado.
 
 ## Resultado esperado en PC host (después de extraer USB)
 

@@ -78,7 +78,6 @@ Esperado:
 - `boot-storage-verify.txt` existe;
 - journal/exportes/notas escriben con verificación de lectura;
 - no se reclama `written/saved/active` cuando falla read-back compare.
-- en UEFI, SQLite se reporta como hosted-only y la persistencia mínima validable es journal/jsonl.
 
 ## 5) Flujo manual UEFI (hardware real)
 
