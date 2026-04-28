@@ -12,7 +12,8 @@ set -euo pipefail
 # - img/1.bmp ... img/4.bmp copied into that FAT boot image for the UEFI splash
 #
 # This ISO is intended for QEMU/VM testing and for firmware that supports UEFI CD/DVD ISO boot.
-# For physical USB boot, use tools/image/make-uefi-usb-image.sh instead.
+# It does not seed a full writable /vita tree in a USB-style FAT data area.
+# For physical USB boot/storage validation, use tools/image/make-uefi-usb-image.sh instead.
 
 ISO_PATH=${1:-build/iso/vitaos-uefi-live.iso}
 BUILD_EFI=${BUILD_EFI:-1}
@@ -166,9 +167,11 @@ print_next_steps() {
     -cdrom $ISO_PATH
 
 [vitaos-iso] Note:
-  This ISO is for UEFI ISO/CD boot testing.
+  This ISO is for UEFI ISO/CD boot testing only.
+  It does not guarantee a pre-seeded writable /vita tree on physical USB media.
   For writing to a physical USB, prefer:
     ./tools/image/make-uefi-usb-image.sh
+  Or run 'storage repair' after boot in a writable FAT environment (for example Rufus media).
 MSG
 }
 

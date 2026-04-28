@@ -26,6 +26,7 @@ typedef struct {
 } jsonl_builder_t;
 
 static char g_session_jsonl_buffer[SESSION_JSONL_EXPORT_BUFFER_MAX];
+static char g_session_jsonl_readback[VITA_STORAGE_READ_MAX];
 
 static const char *safe_text(const char *text, const char *fallback) {
     if (text && text[0]) {
@@ -184,6 +185,23 @@ static void json_end(jsonl_builder_t *jb) {
     jb_putc(jb, '\n');
 }
 
+static bool text_exact_match(const char *a, const char *b) {
+    unsigned long i = 0;
+
+    if (!a || !b) {
+        return false;
+    }
+
+    while (a[i] && b[i]) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        i++;
+    }
+
+    return a[i] == b[i];
+}
+
 static void append_session_line(jsonl_builder_t *jb, const vita_command_context_t *ctx) {
     json_begin(jb, "session");
     json_prop_str(jb, "version", "f1a-f1b-session-jsonl-v1");
@@ -310,7 +328,9 @@ bool session_export_write_jsonl(const vita_command_context_t *ctx) {
 
     audit_emit_boot_event("SESSION_JSONL_EXPORT_REQUESTED", SESSION_JSONL_EXPORT_PATH);
 
-    if (storage_write_text(SESSION_JSONL_EXPORT_PATH, g_session_jsonl_buffer)) {
+    if (storage_write_text(SESSION_JSONL_EXPORT_PATH, g_session_jsonl_buffer) &&
+        storage_read_text(SESSION_JSONL_EXPORT_PATH, g_session_jsonl_readback, sizeof(g_session_jsonl_readback)) &&
+        text_exact_match(g_session_jsonl_buffer, g_session_jsonl_readback)) {
         console_write_line("export jsonl: written");
         console_write_line(SESSION_JSONL_EXPORT_PATH);
         audit_emit_boot_event("SESSION_JSONL_EXPORT_WRITTEN", SESSION_JSONL_EXPORT_PATH);
@@ -319,7 +339,7 @@ bool session_export_write_jsonl(const vita_command_context_t *ctx) {
 
     storage_get_status(&st);
     console_write_line("export jsonl: failed");
-    console_write_line(st.last_error[0] ? st.last_error : "unknown storage error");
-    audit_emit_boot_event("SESSION_JSONL_EXPORT_FAILED", st.last_error[0] ? st.last_error : "unknown storage error");
+    console_write_line(st.last_error[0] ? st.last_error : "write/read verify failed");
+    audit_emit_boot_event("SESSION_JSONL_EXPORT_FAILED", st.last_error[0] ? st.last_error : "write/read verify failed");
     return false;
 }
