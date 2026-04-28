@@ -5,6 +5,7 @@
  * Scope:
  * - Draws a centered neon terminal shell with a tiny built-in 5x7 font.
  * - Routes console text into the framebuffer when GOP is available.
+ * - Keeps a small in-memory scrollback viewport for PageUp/PageDown.
  * - Falls back silently to the existing UEFI text console when unavailable.
  * - No malloc, no external font files, no GUI/window manager.
  */
@@ -14,6 +15,8 @@
 #include "uefi_neon_text.h"
 
 #define EFI_SUCCESS 0ULL
+#define NEON_SCROLLBACK_LINES 96U
+#define NEON_LINE_MAX 132U
 
 typedef uint16_t char16_t;
 typedef uint64_t efi_status_t;
@@ -172,6 +175,15 @@ typedef struct {
     uint32_t text;
     uint32_t dim;
     uint32_t warning;
+
+    uint32_t visible_rows;
+    uint32_t columns;
+    uint32_t line_start;
+    uint32_t line_count;
+    uint32_t current_len;
+    uint32_t view_offset;
+    char lines[NEON_SCROLLBACK_LINES][NEON_LINE_MAX];
+    char current_line[NEON_LINE_MAX];
 } neon_text_state_t;
 
 static neon_text_state_t g_neon;
@@ -370,31 +382,164 @@ static uint32_t str_px_width(const char *s) {
     return n * g_neon.char_w;
 }
 
-static void clear_body(void) {
+static void clear_body_area_only(void) {
     fill_rect(g_neon.body_x,
               g_neon.body_y,
               g_neon.body_w,
               g_neon.body_h,
               g_neon.panel_bg);
-    g_neon.cursor_x = g_neon.body_x + 12U;
-    g_neon.cursor_y = g_neon.body_y + 10U;
 }
 
-static void newline(void) {
-    g_neon.cursor_x = g_neon.body_x + 12U;
-    g_neon.cursor_y += g_neon.char_h + 2U;
+static void zero_line(char *line) {
+    unsigned long i;
 
-    if ((g_neon.cursor_y + g_neon.char_h + 4U) >= (g_neon.body_y + g_neon.body_h)) {
-        clear_body();
-        draw_text_at(g_neon.cursor_x, g_neon.cursor_y, "-- output wrapped / salida reiniciada --", g_neon.dim, g_neon.panel_bg);
-        g_neon.cursor_y += g_neon.char_h + 2U;
-        g_neon.cursor_x = g_neon.body_x + 12U;
+    if (!line) {
+        return;
+    }
+
+    for (i = 0; i < NEON_LINE_MAX; ++i) {
+        line[i] = '\0';
     }
 }
 
-static void put_char(char c) {
-    if (c == '\r') {
-        g_neon.cursor_x = g_neon.body_x + 12U;
+static void reset_scrollback(void) {
+    uint32_t i;
+
+    g_neon.line_start = 0U;
+    g_neon.line_count = 0U;
+    g_neon.current_len = 0U;
+    g_neon.view_offset = 0U;
+
+    for (i = 0U; i < NEON_SCROLLBACK_LINES; ++i) {
+        zero_line(g_neon.lines[i]);
+    }
+
+    zero_line(g_neon.current_line);
+}
+
+static void copy_line(char *dst, const char *src) {
+    unsigned long i = 0;
+
+    if (!dst) {
+        return;
+    }
+
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+
+    while (src[i] && (i + 1U) < NEON_LINE_MAX) {
+        dst[i] = src[i];
+        i++;
+    }
+
+    dst[i] = '\0';
+}
+
+static void push_completed_line(const char *line) {
+    uint32_t slot;
+
+    if (g_neon.line_count < NEON_SCROLLBACK_LINES) {
+        slot = (g_neon.line_start + g_neon.line_count) % NEON_SCROLLBACK_LINES;
+        g_neon.line_count++;
+    } else {
+        slot = g_neon.line_start;
+        g_neon.line_start = (g_neon.line_start + 1U) % NEON_SCROLLBACK_LINES;
+    }
+
+    copy_line(g_neon.lines[slot], line ? line : "");
+}
+
+static const char *line_at(uint32_t index) {
+    uint32_t slot;
+
+    if (index < g_neon.line_count) {
+        slot = (g_neon.line_start + index) % NEON_SCROLLBACK_LINES;
+        return g_neon.lines[slot];
+    }
+
+    return g_neon.current_line;
+}
+
+static uint32_t total_visible_source_lines(void) {
+    return g_neon.line_count + 1U;
+}
+
+static uint32_t max_scroll_offset(void) {
+    uint32_t total = total_visible_source_lines();
+
+    if (total <= g_neon.visible_rows) {
+        return 0U;
+    }
+
+    return total - g_neon.visible_rows;
+}
+
+static void clamp_scroll_offset(void) {
+    uint32_t max_offset = max_scroll_offset();
+
+    if (g_neon.view_offset > max_offset) {
+        g_neon.view_offset = max_offset;
+    }
+}
+
+static void render_body(void) {
+    uint32_t row;
+    uint32_t total;
+    uint32_t end_index;
+    uint32_t start_index;
+    uint32_t y;
+
+    if (!g_neon.ready) {
+        return;
+    }
+
+    clear_body_area_only();
+    clamp_scroll_offset();
+
+    total = total_visible_source_lines();
+    end_index = (total > g_neon.view_offset) ? (total - g_neon.view_offset) : 0U;
+    start_index = (end_index > g_neon.visible_rows) ? (end_index - g_neon.visible_rows) : 0U;
+
+    y = g_neon.body_y + 10U;
+    for (row = 0U; row < g_neon.visible_rows; ++row) {
+        uint32_t src_index = start_index + row;
+
+        if (src_index >= end_index || y + g_neon.char_h >= g_neon.body_y + g_neon.body_h) {
+            break;
+        }
+
+        draw_text_at(g_neon.body_x + 12U,
+                     y,
+                     line_at(src_index),
+                     (g_neon.view_offset > 0U) ? g_neon.dim : g_neon.text,
+                     g_neon.panel_bg);
+        y += g_neon.char_h + 2U;
+    }
+
+    if (g_neon.view_offset > 0U) {
+        draw_text_at(g_neon.body_x + 12U,
+                     g_neon.body_y + g_neon.body_h - g_neon.char_h - 8U,
+                     "-- scrollback: PageDown to return / PageDown para volver --",
+                     g_neon.warning,
+                     g_neon.panel_bg);
+    }
+}
+
+static void newline(void) {
+    push_completed_line(g_neon.current_line);
+    zero_line(g_neon.current_line);
+    g_neon.current_len = 0U;
+    g_neon.view_offset = 0U;
+}
+
+static void append_char_to_current(char c) {
+    if (g_neon.columns == 0U) {
+        return;
+    }
+
+    if ((c == '\r') || (c == '\0')) {
         return;
     }
 
@@ -404,19 +549,24 @@ static void put_char(char c) {
     }
 
     if (c == '\b') {
-        if (g_neon.cursor_x > g_neon.body_x + 12U) {
-            g_neon.cursor_x -= g_neon.char_w;
-            draw_char_at(g_neon.cursor_x, g_neon.cursor_y, ' ', g_neon.text, g_neon.panel_bg);
+        if (g_neon.current_len > 0U) {
+            g_neon.current_len--;
+            g_neon.current_line[g_neon.current_len] = '\0';
         }
+        g_neon.view_offset = 0U;
         return;
     }
 
-    if ((g_neon.cursor_x + g_neon.char_w + 8U) >= (g_neon.body_x + g_neon.body_w)) {
+    if (g_neon.current_len + 1U >= NEON_LINE_MAX || g_neon.current_len >= g_neon.columns) {
         newline();
     }
 
-    draw_char_at(g_neon.cursor_x, g_neon.cursor_y, c, g_neon.text, g_neon.panel_bg);
-    g_neon.cursor_x += g_neon.char_w;
+    if (g_neon.current_len + 1U < NEON_LINE_MAX) {
+        g_neon.current_line[g_neon.current_len++] = c;
+        g_neon.current_line[g_neon.current_len] = '\0';
+    }
+
+    g_neon.view_offset = 0U;
 }
 
 static int locate_gop(efi_system_table_t *st, efi_graphics_output_protocol_t **out_gop) {
@@ -467,6 +617,14 @@ static void compute_layout(void) {
     g_neon.scale = (g_neon.screen_w >= 1280U && g_neon.screen_h >= 720U) ? 2U : 1U;
     g_neon.char_w = (6U * g_neon.scale) + 2U;
     g_neon.char_h = (8U * g_neon.scale) + 2U;
+    g_neon.visible_rows = (g_neon.body_h > 24U) ? ((g_neon.body_h - 20U) / (g_neon.char_h + 2U)) : 1U;
+    if (g_neon.visible_rows == 0U) {
+        g_neon.visible_rows = 1U;
+    }
+    g_neon.columns = (g_neon.body_w > 32U) ? ((g_neon.body_w - 24U) / g_neon.char_w) : 1U;
+    if (g_neon.columns >= NEON_LINE_MAX) {
+        g_neon.columns = NEON_LINE_MAX - 1U;
+    }
 }
 
 static void draw_frame(void) {
@@ -509,7 +667,7 @@ static void draw_frame(void) {
     draw_hline(g_neon.body_x, g_neon.panel_y + g_neon.panel_h - 34U, g_neon.body_w, g_neon.border);
     draw_text_at(g_neon.body_x + 10U, g_neon.panel_y + g_neon.panel_h - 24U, "PROMPT >", g_neon.dim, g_neon.panel_bg);
 
-    clear_body();
+    render_body();
 }
 
 void vita_uefi_neon_text_init(void *image_handle, void *system_table) {
@@ -548,6 +706,7 @@ void vita_uefi_neon_text_init(void *image_handle, void *system_table) {
     g_neon.warning = make_pixel(255U, 90U, 80U);
 
     compute_layout();
+    reset_scrollback();
     g_neon.ready = 1;
     draw_frame();
 }
@@ -564,9 +723,11 @@ void vita_uefi_neon_text_write_raw(const char *text) {
     }
 
     while (text[i]) {
-        put_char(text[i]);
+        append_char_to_current(text[i]);
         i++;
     }
+
+    render_body();
 }
 
 void vita_uefi_neon_text_write_line(const char *text) {
@@ -583,5 +744,53 @@ void vita_uefi_neon_text_clear(void) {
         return;
     }
 
+    reset_scrollback();
     draw_frame();
+}
+
+void vita_uefi_neon_text_scroll_up(void) {
+    uint32_t step;
+    uint32_t max_offset;
+
+    if (!g_neon.ready) {
+        return;
+    }
+
+    step = (g_neon.visible_rows > 2U) ? (g_neon.visible_rows - 2U) : 1U;
+    max_offset = max_scroll_offset();
+
+    if (g_neon.view_offset + step > max_offset) {
+        g_neon.view_offset = max_offset;
+    } else {
+        g_neon.view_offset += step;
+    }
+
+    render_body();
+}
+
+void vita_uefi_neon_text_scroll_down(void) {
+    uint32_t step;
+
+    if (!g_neon.ready) {
+        return;
+    }
+
+    step = (g_neon.visible_rows > 2U) ? (g_neon.visible_rows - 2U) : 1U;
+
+    if (g_neon.view_offset <= step) {
+        g_neon.view_offset = 0U;
+    } else {
+        g_neon.view_offset -= step;
+    }
+
+    render_body();
+}
+
+void vita_uefi_neon_text_scroll_bottom(void) {
+    if (!g_neon.ready) {
+        return;
+    }
+
+    g_neon.view_offset = 0U;
+    render_body();
 }

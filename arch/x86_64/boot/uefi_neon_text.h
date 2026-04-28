@@ -13,5 +13,8 @@ int vita_uefi_neon_text_ready(void);
 void vita_uefi_neon_text_write_raw(const char *text);
 void vita_uefi_neon_text_write_line(const char *text);
 void vita_uefi_neon_text_clear(void);
+void vita_uefi_neon_text_scroll_up(void);
+void vita_uefi_neon_text_scroll_down(void);
+void vita_uefi_neon_text_scroll_bottom(void);
 
 #endif
