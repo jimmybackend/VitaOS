@@ -8,6 +8,12 @@
  * - writes through storage_write_text()
  * - designed for UEFI Simple Text Input and hosted stdin
  * - not a full nano clone yet
+ *
+ * v9 additions:
+ * - append workflow
+ * - safer destructive edit confirmation
+ * - save-as support
+ * - explicit status/path/help editor commands
  */
 
 #include <vita/console.h>
@@ -23,8 +29,18 @@ typedef enum {
     EDITOR_ERROR = 2
 } editor_result_t;
 
+typedef enum {
+    EDITOR_OPEN_EDIT = 0,
+    EDITOR_OPEN_APPEND = 1
+} editor_open_mode_t;
+
 static char g_editor_text[VITA_EDITOR_TEXT_MAX];
 static char g_editor_path[VITA_STORAGE_PATH_MAX];
+static char g_editor_saveas_path[VITA_STORAGE_PATH_MAX];
+static bool g_editor_loaded_existing = false;
+static bool g_editor_destructive_change = false;
+static bool g_editor_save_confirmed = false;
+static editor_open_mode_t g_editor_mode = EDITOR_OPEN_EDIT;
 
 static void mem_zero(void *ptr, unsigned long n) {
     unsigned char *p = (unsigned char *)ptr;
@@ -255,11 +271,18 @@ static bool build_note_path(const char *name, char *out, unsigned long out_cap) 
 static void editor_show_help(void) {
     console_write_line("VitaOS editor / Editor VitaOS:");
     console_write_line("Write one line at a time / Escribe una linea a la vez");
-    console_write_line(".save   -> save file / guardar archivo");
-    console_write_line(".cancel -> cancel / cancelar");
-    console_write_line(".show   -> show current text / mostrar texto actual");
-    console_write_line(".clear  -> clear current text / limpiar texto actual");
-    console_write_line(".help   -> show editor help / mostrar ayuda");
+    console_write_line(".save       -> save file / guardar archivo");
+    console_write_line(".save!      -> force save after destructive change");
+    console_write_line(".confirm    -> confirm destructive save");
+    console_write_line(".saveas PATH-> save current text to another /vita/... path");
+    console_write_line(".cancel     -> cancel / cancelar");
+    console_write_line(".show       -> show current text / mostrar texto actual");
+    console_write_line(".clear      -> clear current text / limpiar texto actual");
+    console_write_line(".replace    -> clear text and switch to replace mode");
+    console_write_line(".append     -> switch to append-safe mode");
+    console_write_line(".path       -> show target path / mostrar destino");
+    console_write_line(".status     -> show editor state / mostrar estado");
+    console_write_line(".help       -> show editor help / mostrar ayuda");
     console_write_line("Limit: 1536 bytes per note in this first editor slice.");
 }
 
@@ -271,6 +294,43 @@ static void editor_show_current_text(void) {
         console_write_line("(empty / vacio)");
     }
     console_write_line("--- end / fin ---");
+}
+
+static void editor_show_status(void) {
+    console_write_line("Editor status / Estado del editor:");
+    console_write_line("path:");
+    console_write_line(g_editor_path[0] ? g_editor_path : "unknown");
+    console_write_line(g_editor_loaded_existing ? "loaded_existing: yes" : "loaded_existing: no");
+    console_write_line((g_editor_mode == EDITOR_OPEN_APPEND) ? "mode: append" : "mode: edit");
+    console_write_line(g_editor_destructive_change ? "destructive_change: yes" : "destructive_change: no");
+    console_write_line(g_editor_save_confirmed ? "save_confirmed: yes" : "save_confirmed: no");
+}
+
+static bool editor_append_text_raw(const char *text) {
+    unsigned long used = str_len(g_editor_text);
+    unsigned long add = str_len(text);
+
+    if (used + add + 1 >= sizeof(g_editor_text)) {
+        console_write_line("editor: text buffer full / buffer de texto lleno");
+        return false;
+    }
+
+    str_append(g_editor_text, sizeof(g_editor_text), text ? text : "");
+    return true;
+}
+
+static bool editor_ensure_newline_before_append(void) {
+    unsigned long used = str_len(g_editor_text);
+
+    if (used == 0) {
+        return true;
+    }
+
+    if (g_editor_text[used - 1] == '\n') {
+        return true;
+    }
+
+    return editor_append_text_raw("\n");
 }
 
 static bool editor_append_line(const char *line) {
@@ -287,7 +347,50 @@ static bool editor_append_line(const char *line) {
     return true;
 }
 
-static editor_result_t editor_run(const char *path) {
+static bool editor_save_to_path(const char *path, bool force) {
+    if (!path_allowed(path)) {
+        console_write_line("editor: save path must be inside /vita/");
+        return false;
+    }
+
+    if (g_editor_loaded_existing && g_editor_destructive_change && !g_editor_save_confirmed && !force) {
+        console_write_line("editor: destructive change detected / cambio destructivo detectado");
+        console_write_line("Use .confirm then .save, or .save! to force.");
+        console_write_line("Usa .confirm y luego .save, o .save! para forzar.");
+        return false;
+    }
+
+    if (storage_write_text(path, g_editor_text)) {
+        console_write_line("editor: saved / guardado");
+        console_write_line(path);
+        return true;
+    }
+
+    console_write_line("editor: save failed / fallo al guardar");
+    storage_show_status();
+    return false;
+}
+
+static bool editor_saveas(const char *args) {
+    const char *p = skip_spaces(args);
+
+    if (!p[0]) {
+        console_write_line("usage: .saveas /vita/notes/new-file.txt");
+        return false;
+    }
+
+    str_copy(g_editor_saveas_path, sizeof(g_editor_saveas_path), p);
+    trim_right_in_place(g_editor_saveas_path);
+
+    if (!path_allowed(g_editor_saveas_path)) {
+        console_write_line("editor: .saveas path must be inside /vita/ and safe");
+        return false;
+    }
+
+    return editor_save_to_path(g_editor_saveas_path, true);
+}
+
+static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
     char line[VITA_EDITOR_LINE_MAX];
 
     if (!path_allowed(path)) {
@@ -302,10 +405,23 @@ static editor_result_t editor_run(const char *path) {
     }
 
     mem_zero(g_editor_text, sizeof(g_editor_text));
+    mem_zero(g_editor_path, sizeof(g_editor_path));
+    mem_zero(g_editor_saveas_path, sizeof(g_editor_saveas_path));
     str_copy(g_editor_path, sizeof(g_editor_path), path);
+    g_editor_loaded_existing = false;
+    g_editor_destructive_change = false;
+    g_editor_save_confirmed = false;
+    g_editor_mode = mode;
 
     if (storage_read_text(g_editor_path, g_editor_text, sizeof(g_editor_text))) {
+        g_editor_loaded_existing = true;
         console_write_line("editor: loaded existing file / archivo existente cargado");
+        if (g_editor_mode == EDITOR_OPEN_APPEND) {
+            (void)editor_ensure_newline_before_append();
+            console_write_line("editor: append mode / modo agregar");
+        }
+    } else if (g_editor_mode == EDITOR_OPEN_APPEND) {
+        console_write_line("editor: append target missing, creating new file on save");
     }
 
     console_pager_end();
@@ -315,7 +431,7 @@ static editor_result_t editor_run(const char *path) {
     editor_show_help();
 
     for (;;) {
-        console_write_raw("edit> ");
+        console_write_raw((g_editor_mode == EDITOR_OPEN_APPEND) ? "append> " : "edit> ");
 
         if (!console_read_line(line, sizeof(line))) {
             console_write_line("editor: input closed / entrada cerrada");
@@ -325,15 +441,30 @@ static editor_result_t editor_run(const char *path) {
         trim_right_in_place(line);
 
         if (str_eq(line, ".save")) {
-            if (storage_write_text(g_editor_path, g_editor_text)) {
-                console_write_line("editor: saved / guardado");
-                console_write_line(g_editor_path);
+            if (editor_save_to_path(g_editor_path, false)) {
                 return EDITOR_SAVE;
             }
+            continue;
+        }
 
-            console_write_line("editor: save failed / fallo al guardar");
-            storage_show_status();
-            return EDITOR_ERROR;
+        if (str_eq(line, ".save!")) {
+            if (editor_save_to_path(g_editor_path, true)) {
+                return EDITOR_SAVE;
+            }
+            continue;
+        }
+
+        if (starts_with(line, ".saveas ")) {
+            if (editor_saveas(line + str_len(".saveas "))) {
+                return EDITOR_SAVE;
+            }
+            continue;
+        }
+
+        if (str_eq(line, ".confirm")) {
+            g_editor_save_confirmed = true;
+            console_write_line("editor: destructive save confirmed / guardado destructivo confirmado");
+            continue;
         }
 
         if (str_eq(line, ".cancel")) {
@@ -351,9 +482,39 @@ static editor_result_t editor_run(const char *path) {
             continue;
         }
 
+        if (str_eq(line, ".path")) {
+            console_write_line(g_editor_path[0] ? g_editor_path : "unknown");
+            continue;
+        }
+
+        if (str_eq(line, ".status")) {
+            editor_show_status();
+            continue;
+        }
+
+        if (str_eq(line, ".append")) {
+            g_editor_mode = EDITOR_OPEN_APPEND;
+            (void)editor_ensure_newline_before_append();
+            console_write_line("editor: append mode enabled / modo agregar activado");
+            continue;
+        }
+
+        if (str_eq(line, ".replace")) {
+            mem_zero(g_editor_text, sizeof(g_editor_text));
+            g_editor_mode = EDITOR_OPEN_EDIT;
+            g_editor_destructive_change = true;
+            g_editor_save_confirmed = false;
+            console_write_line("editor: replace mode enabled; text cleared");
+            console_write_line("Use .confirm before .save, or .save! to force.");
+            continue;
+        }
+
         if (str_eq(line, ".clear")) {
             mem_zero(g_editor_text, sizeof(g_editor_text));
+            g_editor_destructive_change = true;
+            g_editor_save_confirmed = false;
             console_write_line("editor: current text cleared / texto actual borrado");
+            console_write_line("Use .confirm before .save, or .save! to force.");
             continue;
         }
 
@@ -363,11 +524,13 @@ static editor_result_t editor_run(const char *path) {
 
 static void editor_show_notes_help(void) {
     console_write_line("Notes / Notas:");
-    console_write_line("note                 -> edit /vita/notes/note.txt");
-    console_write_line("note field.txt       -> edit /vita/notes/field.txt");
-    console_write_line("note report          -> edit /vita/notes/report.txt");
+    console_write_line("notes list             -> list saved notes / listar notas");
+    console_write_line("note                   -> edit /vita/notes/note.txt");
+    console_write_line("note field.txt         -> edit /vita/notes/field.txt");
+    console_write_line("append field.txt       -> append /vita/notes/field.txt");
     console_write_line("edit /vita/notes/a.txt -> edit an explicit /vita path");
-    console_write_line("Inside editor use .save, .cancel, .show, .clear, .help");
+    console_write_line("append /vita/notes/a.txt -> append an explicit /vita path");
+    console_write_line("Inside editor use .save, .save!, .saveas PATH, .cancel, .show, .clear, .replace, .append, .status, .help");
 }
 
 bool editor_handle_command(const char *cmd) {
@@ -392,11 +555,23 @@ bool editor_handle_command(const char *cmd) {
         args = str_eq(cmd, "note") ? "" : skip_spaces(cmd + str_len("note "));
         if (!build_note_path(args, path, sizeof(path))) {
             console_write_line("note: invalid note name or path");
-            console_write_line("Use: note, note file.txt, or edit /vita/notes/file.txt");
+            console_write_line("Use: note, note file.txt, append file.txt, or edit /vita/notes/file.txt");
             return false;
         }
 
-        result = editor_run(path);
+        result = editor_run(path, EDITOR_OPEN_EDIT);
+        return result == EDITOR_SAVE || result == EDITOR_CANCEL;
+    }
+
+    if (str_eq(cmd, "append") || starts_with(cmd, "append ")) {
+        args = str_eq(cmd, "append") ? "" : skip_spaces(cmd + str_len("append "));
+        if (!build_note_path(args, path, sizeof(path))) {
+            console_write_line("append: invalid note name or path");
+            console_write_line("Use: append file.txt or append /vita/notes/file.txt");
+            return false;
+        }
+
+        result = editor_run(path, EDITOR_OPEN_APPEND);
         return result == EDITOR_SAVE || result == EDITOR_CANCEL;
     }
 
@@ -415,7 +590,7 @@ bool editor_handle_command(const char *cmd) {
             return false;
         }
 
-        result = editor_run(path);
+        result = editor_run(path, EDITOR_OPEN_EDIT);
         return result == EDITOR_SAVE || result == EDITOR_CANCEL;
     }
 
