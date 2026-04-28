@@ -304,6 +304,10 @@ static editor_result_t editor_run(const char *path) {
     mem_zero(g_editor_text, sizeof(g_editor_text));
     str_copy(g_editor_path, sizeof(g_editor_path), path);
 
+    if (storage_read_text(g_editor_path, g_editor_text, sizeof(g_editor_text))) {
+        console_write_line("editor: loaded existing file / archivo existente cargado");
+    }
+
     console_pager_end();
     console_write_line("VitaOS note editor / Editor de notas VitaOS");
     console_write_line("Target / Destino:");
@@ -378,6 +382,10 @@ bool editor_handle_command(const char *cmd) {
     if (str_eq(cmd, "notes")) {
         editor_show_notes_help();
         return true;
+    }
+
+    if (str_eq(cmd, "notes list")) {
+        return storage_list_notes();
     }
 
     if (str_eq(cmd, "note") || starts_with(cmd, "note ")) {

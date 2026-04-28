@@ -17,6 +17,7 @@
 #include <vita/storage.h>
 
 #ifdef VITA_HOSTED
+#include <dirent.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -27,6 +28,7 @@
 #define EFI_FILE_MODE_READ 0x0000000000000001ULL
 #define EFI_FILE_MODE_WRITE 0x0000000000000002ULL
 #define EFI_FILE_MODE_CREATE 0x8000000000000000ULL
+#define EFI_FILE_DIRECTORY 0x0000000000000010ULL
 
 typedef uint16_t char16_t;
 typedef uint64_t efi_status_t;
@@ -52,6 +54,31 @@ typedef struct efi_system_table efi_system_table_t;
 typedef struct efi_loaded_image_protocol efi_loaded_image_protocol_t;
 typedef struct efi_simple_file_system_protocol efi_simple_file_system_protocol_t;
 typedef struct efi_file_protocol efi_file_protocol_t;
+
+typedef struct {
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+    uint8_t pad1;
+    uint32_t nanosecond;
+    int16_t time_zone;
+    uint8_t daylight;
+    uint8_t pad2;
+} efi_time_t;
+
+typedef struct {
+    uint64_t size;
+    uint64_t file_size;
+    uint64_t physical_size;
+    efi_time_t create_time;
+    efi_time_t last_access_time;
+    efi_time_t modification_time;
+    uint64_t attribute;
+    char16_t file_name[1];
+} efi_file_info_t;
 
 struct efi_boot_services {
     efi_table_header_t hdr;
@@ -414,6 +441,68 @@ static bool hosted_write_text(const char *path, const char *text) {
     set_error("ok");
     return true;
 }
+
+
+static bool hosted_read_text(const char *path, char *out, unsigned long out_cap) {
+    char host_path[256];
+    FILE *f;
+    unsigned long n;
+
+    if (!out || out_cap == 0) {
+        set_error("invalid read buffer");
+        return false;
+    }
+    out[0] = '\0';
+
+    if (!hosted_map_path(path, host_path, sizeof(host_path))) {
+        set_error("invalid hosted storage path");
+        return false;
+    }
+
+    f = fopen(host_path, "rb");
+    if (!f) {
+        set_error("hosted fopen read failed");
+        return false;
+    }
+
+    n = (unsigned long)fread(out, 1, out_cap - 1, f);
+    out[n] = '\0';
+    fclose(f);
+    set_error("ok");
+    return true;
+}
+
+static bool hosted_list_notes(void) {
+    DIR *d;
+    struct dirent *de;
+    int count = 0;
+
+    d = opendir("build/storage/vita/notes");
+    if (!d) {
+        console_write_line("notes: no hosted notes directory yet");
+        console_write_line("Run: note first.txt, then .save");
+        set_error("hosted notes directory missing");
+        return false;
+    }
+
+    console_write_line("Notes / Notas:");
+    while ((de = readdir(d)) != 0) {
+        if (str_eq(de->d_name, ".") || str_eq(de->d_name, "..")) {
+            continue;
+        }
+        console_write_line(de->d_name);
+        count++;
+    }
+
+    closedir(d);
+
+    if (count == 0) {
+        console_write_line("(empty / vacio)");
+    }
+
+    set_error("ok");
+    return true;
+}
 #else
 static bool uefi_path_to_char16(const char *path, char16_t *out, unsigned long out_cap) {
     unsigned long i;
@@ -558,6 +647,168 @@ static bool uefi_write_text(const char *path, const char *text) {
 
     return ok;
 }
+
+static void char16_to_ascii(const char16_t *src, char *dst, unsigned long dst_cap) {
+    unsigned long i = 0;
+
+    if (!dst || dst_cap == 0) {
+        return;
+    }
+
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+
+    while (src[i] && (i + 1) < dst_cap) {
+        char16_t ch = src[i];
+        dst[i] = (ch < 128U) ? (char)ch : '?';
+        i++;
+    }
+
+    dst[i] = '\0';
+}
+
+static bool uefi_read_text(const char *path, char *out, unsigned long out_cap) {
+    efi_file_protocol_t *root = 0;
+    efi_file_protocol_t *file = 0;
+    char16_t path16[VITA_STORAGE_PATH_MAX];
+    uint64_t size;
+    bool ok = false;
+
+    if (!out || out_cap == 0) {
+        set_error("invalid read buffer");
+        return false;
+    }
+    out[0] = '\0';
+
+    if (!uefi_path_to_char16(path, path16, sizeof(path16) / sizeof(path16[0]))) {
+        set_error("invalid UEFI storage path");
+        return false;
+    }
+
+    if (!uefi_open_root(&root)) {
+        return false;
+    }
+
+    if (!root->open || root->open(root, &file, path16, EFI_FILE_MODE_READ, 0) != EFI_SUCCESS || !file) {
+        set_error("UEFI file open read failed");
+        if (root->close) {
+            root->close(root);
+        }
+        return false;
+    }
+
+    size = (uint64_t)(out_cap - 1U);
+    if (file->read && file->read(file, &size, out) == EFI_SUCCESS) {
+        out[(unsigned long)size] = '\0';
+        ok = true;
+        set_error("ok");
+    } else {
+        set_error("UEFI file read failed");
+    }
+
+    if (file->close) {
+        file->close(file);
+    }
+    if (root->close) {
+        root->close(root);
+    }
+
+    return ok;
+}
+
+static bool uefi_open_path_read(const char *path, efi_file_protocol_t **out_file) {
+    efi_file_protocol_t *root = 0;
+    char16_t path16[VITA_STORAGE_PATH_MAX];
+
+    if (!out_file) {
+        return false;
+    }
+    *out_file = 0;
+
+    if (!uefi_path_to_char16(path, path16, sizeof(path16) / sizeof(path16[0]))) {
+        set_error("invalid UEFI storage path");
+        return false;
+    }
+
+    if (!uefi_open_root(&root)) {
+        return false;
+    }
+
+    if (!root->open || root->open(root, out_file, path16, EFI_FILE_MODE_READ, 0) != EFI_SUCCESS || !*out_file) {
+        set_error("UEFI directory open failed");
+        if (root->close) {
+            root->close(root);
+        }
+        return false;
+    }
+
+    if (root->close) {
+        root->close(root);
+    }
+    return true;
+}
+
+static bool uefi_list_notes(void) {
+    static uint8_t info_buffer[1024];
+    efi_file_protocol_t *dir = 0;
+    int count = 0;
+
+    if (!uefi_open_path_read("/vita/notes", &dir)) {
+        console_write_line("notes: /vita/notes unavailable");
+        console_write_line(g_storage.last_error[0] ? g_storage.last_error : "unknown");
+        return false;
+    }
+
+    console_write_line("Notes / Notas:");
+
+    for (;;) {
+        uint64_t size = sizeof(info_buffer);
+        efi_file_info_t *info;
+        char name[96];
+
+        mem_zero(info_buffer, sizeof(info_buffer));
+
+        if (!dir->read || dir->read(dir, &size, info_buffer) != EFI_SUCCESS) {
+            set_error("UEFI directory read failed");
+            if (dir->close) {
+                dir->close(dir);
+            }
+            return false;
+        }
+
+        if (size == 0) {
+            break;
+        }
+
+        info = (efi_file_info_t *)info_buffer;
+        char16_to_ascii(info->file_name, name, sizeof(name));
+
+        if (!name[0] || str_eq(name, ".") || str_eq(name, "..")) {
+            continue;
+        }
+
+        if ((info->attribute & EFI_FILE_DIRECTORY) != 0ULL) {
+            continue;
+        }
+
+        console_write_line(name);
+        count++;
+    }
+
+    if (dir->close) {
+        dir->close(dir);
+    }
+
+    if (count == 0) {
+        console_write_line("(empty / vacio)");
+    }
+
+    set_error("ok");
+    return true;
+}
+
 #endif
 
 bool storage_init(const vita_handoff_t *handoff) {
@@ -633,6 +884,9 @@ void storage_show_status(void) {
     console_write_line("storage status");
     console_write_line("storage test");
     console_write_line("storage write /vita/notes/test.txt hello from VitaOS");
+    console_write_line("storage read /vita/notes/test.txt");
+    console_write_line("cat /vita/notes/test.txt");
+    console_write_line("notes list");
 }
 
 bool storage_write_text(const char *path, const char *text) {
@@ -652,6 +906,45 @@ bool storage_write_text(const char *path, const char *text) {
     return uefi_write_text(path, text ? text : "");
 #endif
 }
+
+bool storage_read_text(const char *path, char *out, unsigned long out_cap) {
+    if (!g_storage.initialized) {
+        set_error("storage not initialized");
+        return false;
+    }
+
+    if (!out || out_cap == 0) {
+        set_error("invalid read buffer");
+        return false;
+    }
+    out[0] = '\0';
+
+    if (!path_allowed(path)) {
+        set_error("path must start with /vita/ and must not contain '..' or ':'");
+        return false;
+    }
+
+#ifdef VITA_HOSTED
+    return hosted_read_text(path, out, out_cap);
+#else
+    return uefi_read_text(path, out, out_cap);
+#endif
+}
+
+bool storage_list_notes(void) {
+    if (!g_storage.initialized) {
+        set_error("storage not initialized");
+        console_write_line("notes: storage not initialized");
+        return false;
+    }
+
+#ifdef VITA_HOSTED
+    return hosted_list_notes();
+#else
+    return uefi_list_notes();
+#endif
+}
+
 
 static bool storage_command_test(void) {
     static const char *path = "/vita/tmp/storage-test.txt";
@@ -714,6 +1007,41 @@ static bool storage_command_write(const char *args) {
     return false;
 }
 
+static bool storage_command_read(const char *args) {
+    char path[VITA_STORAGE_PATH_MAX];
+    char text[VITA_STORAGE_READ_MAX];
+    unsigned long i = 0;
+    const char *p;
+
+    p = skip_spaces(args);
+    if (!p[0]) {
+        console_write_line("usage: storage read /vita/notes/test.txt");
+        return false;
+    }
+
+    while (p[i] && !is_space_char(p[i]) && (i + 1) < sizeof(path)) {
+        path[i] = p[i];
+        i++;
+    }
+    path[i] = '\0';
+
+    if (!storage_read_text(path, text, sizeof(text))) {
+        console_write_line("storage read: failed");
+        console_write_line(g_storage.last_error[0] ? g_storage.last_error : "unknown");
+        return false;
+    }
+
+    console_write_line("--- file / archivo ---");
+    console_write_line(text[0] ? text : "(empty / vacio)");
+    console_write_line("--- end / fin ---");
+    return true;
+}
+
+static bool storage_command_list_notes(void) {
+    return storage_list_notes();
+}
+
+
 bool storage_handle_command(const char *cmd) {
     const char *args;
 
@@ -735,7 +1063,27 @@ bool storage_handle_command(const char *cmd) {
         return storage_command_write(args);
     }
 
+    if (starts_with(cmd, "storage read ")) {
+        args = cmd + str_len("storage read ");
+        return storage_command_read(args);
+    }
+
+    if (starts_with(cmd, "storage cat ")) {
+        args = cmd + str_len("storage cat ");
+        return storage_command_read(args);
+    }
+
+    if (starts_with(cmd, "cat ")) {
+        args = cmd + str_len("cat ");
+        return storage_command_read(args);
+    }
+
+    if (str_eq(cmd, "storage notes") || str_eq(cmd, "storage notes list") || str_eq(cmd, "notes list")) {
+        return storage_command_list_notes();
+    }
+
     console_write_line("Unknown storage command / Comando storage desconocido");
     console_write_line("Use: storage, storage status, storage test, storage write /vita/notes/test.txt text");
+    console_write_line("     storage read /vita/notes/test.txt, cat /vita/notes/test.txt, notes list");
     return false;
 }

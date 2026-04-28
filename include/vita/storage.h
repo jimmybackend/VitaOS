@@ -8,6 +8,7 @@
 #define VITA_STORAGE_PATH_MAX 192U
 #define VITA_STORAGE_ERROR_MAX 128U
 #define VITA_STORAGE_TEXT_MAX 512U
+#define VITA_STORAGE_READ_MAX 2048U
 
 typedef enum {
     VITA_STORAGE_BACKEND_NONE = 0,
@@ -29,6 +30,8 @@ bool storage_is_ready(void);
 void storage_get_status(vita_storage_status_t *out_status);
 void storage_show_status(void);
 bool storage_write_text(const char *path, const char *text);
+bool storage_read_text(const char *path, char *out, unsigned long out_cap);
+bool storage_list_notes(void);
 bool storage_handle_command(const char *cmd);
 
 #endif
