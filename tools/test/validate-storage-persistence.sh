@@ -1,7 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOG=${1:-build/test/boot-auto-storage-flow.log}
+LOG_SUCCESS=${1:-build/test/validate-storage-persistence.log}
+LOG_FAILURE=${2:-build/test/validate-storage-failure.log}
+
+mkdir -p build/test
+
+if [[ ! -x build/hosted/vitaos-hosted ]]; then
+  make hosted
+fi
+
+rm -rf build/storage
+
+cat <<'CMDS' | ./build/hosted/vitaos-hosted > "$LOG_SUCCESS" 2>&1
+storage status
+storage last-error
+storage check
+journal status
+journal summary
+note usb-test.txt
+primera linea persistente
+.save
+.exit
+notes list
+storage read /vita/notes/usb-test.txt
+export session
+export jsonl
+diagnostic
+export index
+selftest
+shutdown
+CMDS
 
 required_files=(
   build/storage/vita/tmp/boot-storage-verify.txt
@@ -19,10 +48,56 @@ for f in "${required_files[@]}"; do
   [[ -f "$f" ]] || { echo "missing required file: $f" >&2; exit 1; }
 done
 
-grep -q "storage bootstrap: verified" "$LOG" || { echo "log missing storage bootstrap verified" >&2; exit 1; }
-grep -q "Persistent journal: READY" "$LOG" || { echo "log missing journal ready" >&2; exit 1; }
-grep -q "note: quick-create verified" "$LOG" || { echo "log missing note quick-create verified" >&2; exit 1; }
-grep -q "export session: written" "$LOG" || { echo "log missing export session written" >&2; exit 1; }
-grep -q "export jsonl: written" "$LOG" || { echo "log missing export jsonl written" >&2; exit 1; }
+grep -q "storage bootstrap: verified" "$LOG_SUCCESS" || { echo "log missing storage bootstrap verified" >&2; exit 1; }
+grep -q "storage: verified writable" "$LOG_SUCCESS" || { echo "log missing storage writable verification" >&2; exit 1; }
+grep -q "journal: active" "$LOG_SUCCESS" || { echo "log missing journal active" >&2; exit 1; }
+
+for bad in \
+  "storage bootstrap: failed" \
+  "journal: inactive" \
+  "export session: failed" \
+  "export jsonl: failed" \
+  "diagnostic: failed" \
+  "export index: failed" \
+  "selftest: failed"; do
+  ! grep -q "$bad" "$LOG_SUCCESS" || { echo "unexpected failure marker in success log: $bad" >&2; exit 1; }
+done
+
+rm -rf build/storage
+printf 'not-a-dir' > build/storage
+
+cat <<'CMDS' | ./build/hosted/vitaos-hosted > "$LOG_FAILURE" 2>&1
+status
+audit status
+storage status
+storage last-error
+journal status
+note fail.txt
+export session
+export jsonl
+diagnostic
+selftest
+shutdown
+CMDS
+
+for bad_positive in \
+  "storage: verified writable" \
+  "storage bootstrap: verified" \
+  "journal: active" \
+  "export session: written" \
+  "export jsonl: written" \
+  "diagnostic: written" \
+  "selftest: pass" \
+  "saved"; do
+  ! grep -q "$bad_positive" "$LOG_FAILURE" || { echo "unexpected success marker in failure log: $bad_positive" >&2; exit 1; }
+done
+
+grep -q "storage bootstrap: failed" "$LOG_FAILURE" || { echo "failure log missing bootstrap failed marker" >&2; exit 1; }
+grep -q "journal: inactive" "$LOG_FAILURE" || { echo "failure log missing journal inactive marker" >&2; exit 1; }
+grep -qi "failed" "$LOG_FAILURE" || { echo "failure log missing generic failed marker" >&2; exit 1; }
+grep -qi "storage last error\|storage_last_error\|last-error\|error" "$LOG_FAILURE" || { echo "failure log missing storage error cause" >&2; exit 1; }
+
+rm -f build/storage
+mkdir -p build/storage
 
 echo "validate-storage-persistence: ok"
