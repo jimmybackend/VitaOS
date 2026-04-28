@@ -275,6 +275,10 @@ static bool str_eq(const char *a, const char *b) {
     return a[i] == b[i];
 }
 
+const char *storage_last_error(void) {
+    return g_storage.last_error[0] ? g_storage.last_error : "none";
+}
+
 static bool starts_with(const char *s, const char *prefix) {
     unsigned long i = 0;
 
@@ -384,6 +388,38 @@ static bool path_allowed(const char *path) {
 }
 
 #ifdef VITA_HOSTED
+static bool hosted_ensure_parent_dirs(char *host_path);
+
+static bool hosted_ensure_dir_path(const char *path) {
+    char host_path[256];
+
+    if (!path || !starts_with(path, "/vita/")) {
+        return false;
+    }
+
+    host_path[0] = '\0';
+    str_copy(host_path, sizeof(host_path), "build/storage");
+    str_append(host_path, sizeof(host_path), path);
+    hosted_ensure_parent_dirs(host_path);
+    (void)mkdir(host_path, 0775);
+    return true;
+}
+
+static bool hosted_path_exists(const char *path) {
+    char host_path[256];
+    struct stat st;
+
+    if (!path || !starts_with(path, "/vita/")) {
+        return false;
+    }
+
+    host_path[0] = '\0';
+    str_copy(host_path, sizeof(host_path), "build/storage");
+    str_append(host_path, sizeof(host_path), path);
+
+    return stat(host_path, &st) == 0;
+}
+
 static bool hosted_ensure_parent_dirs(char *host_path) {
     unsigned long i;
 
@@ -582,6 +618,137 @@ static bool uefi_open_root(efi_file_protocol_t **out_root) {
     return true;
 }
 
+static bool uefi_open_path(efi_file_protocol_t *root,
+                           const char *path,
+                           uint64_t mode,
+                           uint64_t attrs,
+                           efi_file_protocol_t **out_file) {
+    char16_t path16[VITA_STORAGE_PATH_MAX];
+
+    if (!root || !out_file) {
+        return false;
+    }
+    *out_file = 0;
+
+    if (!uefi_path_to_char16(path, path16, sizeof(path16) / sizeof(path16[0]))) {
+        set_error("invalid UEFI storage path");
+        return false;
+    }
+
+    if (!root->open || root->open(root, out_file, path16, mode, attrs) != EFI_SUCCESS || !*out_file) {
+        return false;
+    }
+
+    return true;
+}
+
+static bool uefi_path_exists(const char *path) {
+    efi_file_protocol_t *root = 0;
+    efi_file_protocol_t *f = 0;
+    bool exists = false;
+
+    if (!uefi_open_root(&root)) {
+        return false;
+    }
+
+    if (uefi_open_path(root, path, EFI_FILE_MODE_READ, 0, &f)) {
+        exists = true;
+        if (f->close) {
+            f->close(f);
+        }
+    }
+
+    if (root->close) {
+        root->close(root);
+    }
+
+    return exists;
+}
+
+static bool uefi_create_directory(const char *path) {
+    efi_file_protocol_t *root = 0;
+    efi_file_protocol_t *dir = 0;
+    bool ok = false;
+
+    if (!uefi_open_root(&root)) {
+        return false;
+    }
+
+    if (uefi_open_path(root,
+                       path,
+                       EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE,
+                       EFI_FILE_DIRECTORY,
+                       &dir)) {
+        ok = true;
+        if (dir->close) {
+            dir->close(dir);
+        }
+    }
+
+    if (root->close) {
+        root->close(root);
+    }
+
+    if (!ok) {
+        set_error("UEFI directory create failed");
+    } else {
+        set_error("ok");
+    }
+
+    return ok;
+}
+
+static bool uefi_ensure_directory(const char *path) {
+    if (uefi_path_exists(path)) {
+        set_error("ok");
+        return true;
+    }
+
+    return uefi_create_directory(path);
+}
+
+static bool uefi_ensure_parent_dirs(const char *file_path) {
+    char dir[VITA_STORAGE_PATH_MAX];
+    unsigned long i = 0;
+    unsigned long last_slash = 0;
+
+    if (!file_path || !starts_with(file_path, "/vita/")) {
+        return false;
+    }
+
+    while (file_path[i] && (i + 1) < sizeof(dir)) {
+        dir[i] = file_path[i];
+        if (file_path[i] == '/') {
+            last_slash = i;
+        }
+        i++;
+    }
+    dir[i] = '\0';
+
+    if (last_slash == 0) {
+        return true;
+    }
+
+    for (i = 1; dir[i]; ++i) {
+        if (dir[i] == '/') {
+            char keep = dir[i];
+            dir[i] = '\0';
+            if (!uefi_ensure_directory(dir)) {
+                dir[i] = keep;
+                return false;
+            }
+            dir[i] = keep;
+        }
+    }
+
+    dir[last_slash] = '\0';
+    if (dir[0]) {
+        return uefi_ensure_directory(dir);
+    }
+
+    return true;
+}
+
 static void uefi_delete_if_exists(efi_file_protocol_t *root, char16_t *path16) {
     efi_file_protocol_t *file = 0;
 
@@ -615,6 +782,14 @@ static bool uefi_write_text(const char *path, const char *text) {
     }
 
     if (!uefi_open_root(&root)) {
+        return false;
+    }
+
+    if (!uefi_ensure_parent_dirs(path)) {
+        if (root->close) {
+            root->close(root);
+        }
+        set_error("UEFI ensure parent dirs failed");
         return false;
     }
 
@@ -813,6 +988,27 @@ static bool uefi_list_notes(void) {
 
 #endif
 
+static bool storage_ensure_directory(const char *path) {
+#ifdef VITA_HOSTED
+    if (!hosted_ensure_dir_path(path)) {
+        set_error("hosted ensure directory failed");
+        return false;
+    }
+    set_error("ok");
+    return true;
+#else
+    return uefi_ensure_directory(path);
+#endif
+}
+
+static bool storage_path_exists(const char *path) {
+#ifdef VITA_HOSTED
+    return hosted_path_exists(path);
+#else
+    return uefi_path_exists(path);
+#endif
+}
+
 bool storage_init(const vita_handoff_t *handoff) {
     mem_zero(&g_storage, sizeof(g_storage));
     g_storage.handoff = handoff;
@@ -888,6 +1084,8 @@ void storage_show_status(void) {
     console_write_line("storage write /vita/notes/test.txt hello from VitaOS");
     console_write_line("storage read /vita/notes/test.txt");
     console_write_line("cat /vita/notes/test.txt");
+    console_write_line("storage repair | storage check | storage probe");
+    console_write_line("storage last-error");
     console_write_line("notes list");
 }
 
@@ -948,22 +1146,41 @@ bool storage_list_notes(void) {
 }
 
 
+static bool storage_tree_repair(void);
+static bool storage_tree_check(void);
+
 static bool storage_command_test(void) {
     static const char *path = "/vita/tmp/storage-test.txt";
-    static const char *text =
-        "VitaOS storage test\n"
-        "This file was written by the minimal F1A/F1B storage facade.\n"
-        "If you can read this from the USB, the basic file writer path works.\n";
+    static const char *text = "vita_storage_test_v1\n";
+    char readback[VITA_STORAGE_READ_MAX];
 
-    if (storage_write_text(path, text)) {
-        console_write_line("storage test: written");
-        console_write_line(path);
-        return true;
+    if (!storage_tree_repair()) {
+        console_write_line("storage test: repair failed");
+        console_write_line(storage_last_error());
+        return false;
     }
 
-    console_write_line("storage test: failed");
-    console_write_line(g_storage.last_error[0] ? g_storage.last_error : "unknown");
-    return false;
+    if (!storage_write_text(path, text)) {
+        console_write_line("storage test: write failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    if (!storage_read_text(path, readback, sizeof(readback))) {
+        console_write_line("storage test: read failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    if (!str_eq(readback, text)) {
+        console_write_line("storage test: verify failed");
+        console_write_line("write/read mismatch");
+        return false;
+    }
+
+    console_write_line("storage test: VERIFIED");
+    console_write_line(path);
+    return true;
 }
 
 static bool storage_command_write(const char *args) {
@@ -1103,6 +1320,10 @@ bool storage_handle_command(const char *cmd) {
 
     if (str_eq(cmd, "storage test")) {
         return storage_command_test();
+    }
+
+    if (str_eq(cmd, "storage probe")) {
+        return storage_command_probe();
     }
 
     if (starts_with(cmd, "storage write ")) {

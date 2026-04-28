@@ -412,6 +412,13 @@ bool session_journal_init(void) {
 
     journal_add_event("journal_started", "persistent session journal active", false);
 
+    if (!g_journal.last_flush_ok) {
+        g_journal.active = false;
+        console_write_line("journal: inactive, storage write failed");
+        console_write_line(g_journal.last_error[0] ? g_journal.last_error : "unknown");
+        return false;
+    }
+
     console_write_line("Persistent journal: READY / Bitacora persistente: LISTA");
     console_write_line(SESSION_JOURNAL_JSONL_PATH);
     console_write_line(SESSION_JOURNAL_TEXT_PATH);

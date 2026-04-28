@@ -366,8 +366,8 @@ static bool editor_save_to_path(const char *path, bool force) {
         return true;
     }
 
-    console_write_line("editor: save failed / fallo al guardar");
-    storage_show_status();
+    console_write_line("note save: failed");
+    console_write_line(storage_last_error());
     return false;
 }
 

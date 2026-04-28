@@ -32,6 +32,7 @@ void storage_show_status(void);
 bool storage_write_text(const char *path, const char *text);
 bool storage_read_text(const char *path, char *out, unsigned long out_cap);
 bool storage_list_notes(void);
+const char *storage_last_error(void);
 bool storage_handle_command(const char *cmd);
 
 #endif
