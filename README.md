@@ -284,6 +284,9 @@ Reglas de trabajo activas:
 ## Documentos recomendados
 
 - `docs/VitaOS-SPEC.md`
+- `docs/history/applied-patches.md`
+- `docs/tools/no-python-runtime.md`
+- `docs/validation/f1a-f1b-validation-checklist.md`
 - `AGENTS.md`
 - `schema/audit.sql`
 

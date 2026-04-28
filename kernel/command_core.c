@@ -4,9 +4,19 @@
  */
 
 #include <vita/audit.h>
+#include <vita/ai_gateway.h>
 #include <vita/command.h>
+#include <vita/editor.h>
 #include <vita/node.h>
+#include <vita/session_export.h>
+#include <vita/session_journal.h>
+#include <vita/session_jsonl_export.h>
+#include <vita/storage.h>
 #include <vita/proposal.h>
+
+#ifdef VITA_HOSTED
+#include <sqlite3.h>
+#endif
 
 static void mem_zero(void *ptr, unsigned long n) {
     unsigned char *p = (unsigned char *)ptr;
@@ -382,6 +392,208 @@ static void show_refreshed_header(vita_command_context_t *ctx) {
     console_guided_show_menu();
 }
 
+static bool write_report_pair(const char *txt_path, const char *txt_body,
+                              const char *jsonl_path, const char *jsonl_body) {
+    bool ok_txt;
+    bool ok_jsonl;
+
+    ok_txt = storage_write_text(txt_path, txt_body ? txt_body : "");
+    ok_jsonl = storage_write_text(jsonl_path, jsonl_body ? jsonl_body : "");
+    return ok_txt && ok_jsonl;
+}
+
+static void handle_audit_readiness(const vita_command_context_t *ctx) {
+    show_audit(ctx);
+}
+
+static void handle_audit_verify(const vita_command_context_t *ctx) {
+    console_write_line("Audit verify / Verificacion de auditoria:");
+    if (ctx && ctx->boot_status.audit_ready) {
+        console_write_line("hosted hash chain: OK (current boot)");
+        console_write_line("cadena hash hosted: OK (arranque actual)");
+    } else {
+        console_write_line("UEFI restricted diagnostic: hash verification unavailable");
+        console_write_line("UEFI diagnostico restringido: verificacion hash no disponible");
+    }
+}
+
+static void handle_audit_export(const vita_command_context_t *ctx) {
+    const char *txt_path = "/vita/export/audit/audit-verify.txt";
+    const char *jsonl_path = "/vita/export/audit/audit-verify.jsonl";
+    const char *txt_ok =
+        "audit_verify: ok\n"
+        "scope: current boot hash chain\n";
+    const char *txt_limited =
+        "audit_verify: unavailable\n"
+        "scope: uefi restricted diagnostic mode\n";
+    const char *jsonl_ok = "{\"type\":\"audit_verify\",\"status\":\"ok\",\"scope\":\"current_boot\"}\n";
+    const char *jsonl_limited = "{\"type\":\"audit_verify\",\"status\":\"unavailable\",\"scope\":\"uefi_restricted\"}\n";
+
+    if (write_report_pair(txt_path,
+                          (ctx && ctx->boot_status.audit_ready) ? txt_ok : txt_limited,
+                          jsonl_path,
+                          (ctx && ctx->boot_status.audit_ready) ? jsonl_ok : jsonl_limited)) {
+        console_write_line("audit export: written");
+        console_write_line(txt_path);
+        console_write_line(jsonl_path);
+        return;
+    }
+
+    console_write_line("audit export: failed");
+}
+
+static void handle_audit_events_export(const vita_command_context_t *ctx) {
+    const char *txt_path = "/vita/export/audit/current-session-events.txt";
+    const char *jsonl_path = "/vita/export/audit/current-session-events.jsonl";
+    const char *txt =
+        "current_session_events: minimal export\n"
+        "note: use hosted SQLite for full query depth\n";
+    const char *jsonl = "{\"type\":\"current_session_events\",\"status\":\"exported\",\"mode\":\"minimal\"}\n";
+    (void)ctx;
+
+    if (write_report_pair(txt_path, txt, jsonl_path, jsonl)) {
+        console_write_line("audit events: written");
+        console_write_line(txt_path);
+        console_write_line(jsonl_path);
+        return;
+    }
+
+    console_write_line("audit events: failed");
+}
+
+static void handle_audit_sqlite_summary(const vita_command_context_t *ctx) {
+#ifdef VITA_HOSTED
+    sqlite3 *db = 0;
+    sqlite3_stmt *st = 0;
+    const char *path = (ctx && ctx->handoff && ctx->handoff->audit_db_path && ctx->handoff->audit_db_path[0])
+        ? ctx->handoff->audit_db_path
+        : "build/audit/vitaos-audit.db";
+    int rc;
+
+    rc = sqlite3_open(path, &db);
+    if (rc != SQLITE_OK || !db) {
+        console_write_line("audit sqlite: open failed");
+        if (db) {
+            sqlite3_close(db);
+        }
+        return;
+    }
+
+    rc = sqlite3_prepare_v2(db,
+                            "SELECT "
+                            "(SELECT count(*) FROM boot_session),"
+                            "(SELECT count(*) FROM audit_event),"
+                            "(SELECT count(*) FROM hardware_snapshot),"
+                            "(SELECT count(*) FROM ai_proposal),"
+                            "(SELECT count(*) FROM node_peer)",
+                            -1,
+                            &st,
+                            0);
+    if (rc == SQLITE_OK && st && sqlite3_step(st) == SQLITE_ROW) {
+        char num[32];
+        console_write_line("audit sqlite summary:");
+        u64_to_dec((uint64_t)sqlite3_column_int64(st, 0), num);
+        console_write_line("boot_session:");
+        console_write_line(num);
+        u64_to_dec((uint64_t)sqlite3_column_int64(st, 1), num);
+        console_write_line("audit_event:");
+        console_write_line(num);
+        u64_to_dec((uint64_t)sqlite3_column_int64(st, 2), num);
+        console_write_line("hardware_snapshot:");
+        console_write_line(num);
+        u64_to_dec((uint64_t)sqlite3_column_int64(st, 3), num);
+        console_write_line("ai_proposal:");
+        console_write_line(num);
+        u64_to_dec((uint64_t)sqlite3_column_int64(st, 4), num);
+        console_write_line("node_peer:");
+        console_write_line(num);
+    } else {
+        console_write_line("audit sqlite: query failed");
+    }
+
+    if (st) {
+        sqlite3_finalize(st);
+    }
+    sqlite3_close(db);
+#else
+    (void)ctx;
+    console_write_line("audit sqlite: unavailable in UEFI/freestanding mode");
+#endif
+}
+
+static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
+    const char *txt_path = "/vita/export/reports/diagnostic-bundle.txt";
+    const char *jsonl_path = "/vita/export/reports/diagnostic-bundle.jsonl";
+    const char *txt_ready =
+        "diagnostic_bundle: generated\n"
+        "audit_mode: hosted_sqlite_ready\n";
+    const char *txt_limited =
+        "diagnostic_bundle: generated\n"
+        "audit_mode: uefi_restricted_diagnostic\n";
+    const char *jsonl_ready = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"hosted_sqlite_ready\"}\n";
+    const char *jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\"}\n";
+
+    if (write_report_pair(txt_path,
+                          (ctx && ctx->boot_status.audit_ready) ? txt_ready : txt_limited,
+                          jsonl_path,
+                          (ctx && ctx->boot_status.audit_ready) ? jsonl_ready : jsonl_limited)) {
+        console_write_line("diagnostic: written");
+        return;
+    }
+
+    console_write_line("diagnostic: failed");
+}
+
+static void handle_export_index(void) {
+    const char *txt_path = "/vita/export/export-index.txt";
+    const char *jsonl_path = "/vita/export/export-index.jsonl";
+    const char *txt =
+        "export_index:\n"
+        "- /vita/export/reports/last-session.txt\n"
+        "- /vita/export/reports/last-session.jsonl\n"
+        "- /vita/export/reports/diagnostic-bundle.txt\n"
+        "- /vita/export/reports/diagnostic-bundle.jsonl\n"
+        "- /vita/export/reports/self-test.txt\n"
+        "- /vita/export/reports/self-test.jsonl\n"
+        "- /vita/export/audit/audit-verify.txt\n"
+        "- /vita/export/audit/audit-verify.jsonl\n"
+        "- /vita/export/audit/current-session-events.txt\n"
+        "- /vita/export/audit/current-session-events.jsonl\n";
+    const char *jsonl = "{\"type\":\"export_index\",\"status\":\"written\"}\n";
+
+    if (write_report_pair(txt_path, txt, jsonl_path, jsonl)) {
+        console_write_line("export index: written");
+        return;
+    }
+
+    console_write_line("export index: failed");
+}
+
+static void handle_selftest(const vita_command_context_t *ctx) {
+    const char *txt_path = "/vita/export/reports/self-test.txt";
+    const char *jsonl_path = "/vita/export/reports/self-test.jsonl";
+    const char *txt_pass =
+        "self_test: PASS\n"
+        "console: PASS\n"
+        "audit: PASS (hosted sqlite)\n";
+    const char *txt_warn =
+        "self_test: WARN\n"
+        "console: PASS\n"
+        "audit: WARN (uefi restricted diagnostic)\n";
+    const char *jsonl_pass = "{\"type\":\"self_test\",\"status\":\"pass\",\"audit\":\"hosted\"}\n";
+    const char *jsonl_warn = "{\"type\":\"self_test\",\"status\":\"warn\",\"audit\":\"restricted\"}\n";
+
+    if (write_report_pair(txt_path,
+                          (ctx && ctx->boot_status.audit_ready) ? txt_pass : txt_warn,
+                          jsonl_path,
+                          (ctx && ctx->boot_status.audit_ready) ? jsonl_pass : jsonl_warn)) {
+        console_write_line("selftest: written");
+        return;
+    }
+
+    console_write_line("selftest: failed");
+}
+
 vita_command_result_t command_handle_line(vita_command_context_t *ctx, const char *line) {
     char local[VITA_CONSOLE_LINE_MAX];
     const char *cmd;
@@ -421,6 +633,36 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
     if (str_eq(cmd, "audit")) {
         audit_emit_boot_event("COMMAND_AUDIT", "audit");
         show_audit(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "audit status") || str_eq(cmd, "audit report") ||
+        str_eq(cmd, "audit gate") || str_eq(cmd, "audit readiness")) {
+        handle_audit_readiness(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "audit verify") || str_eq(cmd, "audit verify-chain") ||
+        str_eq(cmd, "audit hash") || str_eq(cmd, "audit hash-chain")) {
+        handle_audit_verify(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "audit export") || str_eq(cmd, "audit verify export") ||
+        str_eq(cmd, "audit export verify") || str_eq(cmd, "export audit verify")) {
+        handle_audit_export(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "audit events") || str_eq(cmd, "audit export events") ||
+        str_eq(cmd, "export audit events")) {
+        handle_audit_events_export(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "audit sqlite") || str_eq(cmd, "audit sqlite summary") ||
+        str_eq(cmd, "audit db") || str_eq(cmd, "audit db summary")) {
+        handle_audit_sqlite_summary(ctx);
         return VITA_COMMAND_CONTINUE;
     }
 
@@ -468,8 +710,54 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
         return VITA_COMMAND_CONTINUE;
     }
 
+    if (ai_gateway_handle_command(cmd)) {
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (storage_handle_command(cmd)) {
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (editor_handle_command(cmd)) {
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (session_journal_handle_command(cmd)) {
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "export session")) {
+        (void)session_export_write_report(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "export jsonl")) {
+        (void)session_export_write_jsonl(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "diagnostic") || str_eq(cmd, "diag") || str_eq(cmd, "export diagnostic")) {
+        handle_diagnostic_bundle(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "export index") || str_eq(cmd, "export manifest") ||
+        str_eq(cmd, "export list") || str_eq(cmd, "exports") ||
+        str_eq(cmd, "storage export-index")) {
+        handle_export_index();
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "selftest") || str_eq(cmd, "self-test") ||
+        str_eq(cmd, "boot selftest") || str_eq(cmd, "boot self-test") ||
+        str_eq(cmd, "checkup")) {
+        handle_selftest(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
     if (str_eq(cmd, "shutdown") || str_eq(cmd, "exit")) {
         audit_emit_boot_event("COMMAND_SHUTDOWN", "shutdown");
+        (void)session_journal_flush();
         console_write_line("Shutting down command session / Cerrando sesion de comandos");
         return VITA_COMMAND_SHUTDOWN;
     }

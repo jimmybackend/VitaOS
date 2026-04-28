@@ -20,6 +20,8 @@
 #include <vita/hw.h>
 #include <vita/node.h>
 #include <vita/proposal.h>
+#include <vita/session_journal.h>
+#include <vita/storage.h>
 
 void panic_fatal(const char *reason);
 
@@ -211,6 +213,18 @@ void kmain(const vita_handoff_t *handoff) {
         }
 
         console_show_hw(&hw);
+    }
+
+    if (storage_init(handoff)) {
+        audit_emit_boot_event("STORAGE_READY", "storage initialized");
+    } else {
+        audit_emit_boot_event("STORAGE_UNAVAILABLE", "storage not initialized");
+    }
+
+    if (session_journal_init()) {
+        audit_emit_boot_event("SESSION_JOURNAL_READY", "session journal initialized");
+    } else {
+        audit_emit_boot_event("SESSION_JOURNAL_UNAVAILABLE", "session journal not active");
     }
 
     console_banner(&boot_status);

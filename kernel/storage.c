@@ -328,6 +328,7 @@ static void str_copy(char *dst, unsigned long cap, const char *src) {
     dst[i] = '\0';
 }
 
+ #ifdef VITA_HOSTED
 static void str_append(char *dst, unsigned long cap, const char *src) {
     unsigned long i = 0;
     unsigned long j = 0;
@@ -350,6 +351,7 @@ static void str_append(char *dst, unsigned long cap, const char *src) {
 
     dst[i] = '\0';
 }
+#endif
 
 static void set_error(const char *text) {
     str_copy(g_storage.last_error, sizeof(g_storage.last_error), text ? text : "unknown");
@@ -1041,13 +1043,58 @@ static bool storage_command_list_notes(void) {
     return storage_list_notes();
 }
 
+static bool storage_tree_touch(const char *path) {
+    return storage_write_text(path, "vita_tree_marker\n");
+}
+
+static bool storage_tree_repair(void) {
+    bool ok = true;
+
+    ok = storage_tree_touch("/vita/audit/.keep") && ok;
+    ok = storage_tree_touch("/vita/notes/.keep") && ok;
+    ok = storage_tree_touch("/vita/messages/.keep") && ok;
+    ok = storage_tree_touch("/vita/emergency/.keep") && ok;
+    ok = storage_tree_touch("/vita/ai/.keep") && ok;
+    ok = storage_tree_touch("/vita/net/.keep") && ok;
+    ok = storage_tree_touch("/vita/export/.keep") && ok;
+    ok = storage_tree_touch("/vita/export/reports/.keep") && ok;
+    ok = storage_tree_touch("/vita/export/audit/.keep") && ok;
+    ok = storage_tree_touch("/vita/tmp/.keep") && ok;
+
+    return ok;
+}
+
+static bool storage_tree_check(void) {
+    char text[VITA_STORAGE_READ_MAX];
+    bool ok = true;
+
+    ok = storage_read_text("/vita/audit/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/notes/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/messages/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/emergency/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/ai/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/net/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/export/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/export/reports/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/export/audit/.keep", text, sizeof(text)) && ok;
+    ok = storage_read_text("/vita/tmp/.keep", text, sizeof(text)) && ok;
+
+    return ok;
+}
+
 
 bool storage_handle_command(const char *cmd) {
     const char *args;
+    bool storage_family;
 
     if (!cmd) {
         return false;
     }
+
+    storage_family =
+        starts_with(cmd, "storage") ||
+        starts_with(cmd, "cat ") ||
+        str_eq(cmd, "notes list");
 
     if (str_eq(cmd, "storage") || str_eq(cmd, "storage status")) {
         storage_show_status();
@@ -1080,6 +1127,34 @@ bool storage_handle_command(const char *cmd) {
 
     if (str_eq(cmd, "storage notes") || str_eq(cmd, "storage notes list") || str_eq(cmd, "notes list")) {
         return storage_command_list_notes();
+    }
+
+    if (str_eq(cmd, "storage tree")) {
+        console_write_line("/vita tree expected:");
+        console_write_line("/vita/audit /vita/notes /vita/messages /vita/emergency /vita/ai /vita/net /vita/export /vita/tmp");
+        return true;
+    }
+
+    if (str_eq(cmd, "storage repair") || str_eq(cmd, "storage init-tree") || str_eq(cmd, "storage mkdirs")) {
+        if (storage_tree_repair()) {
+            console_write_line("storage repair: ok");
+            return true;
+        }
+        console_write_line("storage repair: failed");
+        return false;
+    }
+
+    if (str_eq(cmd, "storage check") || str_eq(cmd, "storage validate") || str_eq(cmd, "storage verify")) {
+        if (storage_tree_check()) {
+            console_write_line("storage check: ok");
+            return true;
+        }
+        console_write_line("storage check: missing tree entries (run storage repair)");
+        return false;
+    }
+
+    if (!storage_family) {
+        return false;
     }
 
     console_write_line("Unknown storage command / Comando storage desconocido");
