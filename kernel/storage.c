@@ -1316,49 +1316,6 @@ bool storage_bootstrap_persistent_tree(void) {
     return true;
 }
 
-bool storage_bootstrap_persistent_tree(void) {
-    static const char *verify_path = "/vita/tmp/boot-storage-verify.txt";
-    static const char *verify_text = "vita_storage_bootstrap_verify_v1\n";
-    char readback[VITA_STORAGE_READ_MAX];
-
-    g_storage.bootstrap_attempted = true;
-    g_storage.bootstrap_verified = false;
-
-    if (!g_storage.initialized || !g_storage.writable) {
-        set_error("bootstrap failed: storage unavailable");
-        return false;
-    }
-
-    if (!storage_tree_repair()) {
-        set_error("bootstrap failed: storage_tree_repair");
-        return false;
-    }
-
-    if (!storage_tree_check()) {
-        set_error("bootstrap failed: storage_tree_check");
-        return false;
-    }
-
-    if (!storage_write_text(verify_path, verify_text)) {
-        set_error("bootstrap failed: verify marker write");
-        return false;
-    }
-
-    if (!storage_read_text(verify_path, readback, sizeof(readback))) {
-        set_error("bootstrap failed: verify marker read");
-        return false;
-    }
-
-    if (!str_eq(readback, verify_text)) {
-        set_error("bootstrap failed: verify marker compare");
-        return false;
-    }
-
-    g_storage.bootstrap_verified = true;
-    set_error("ok");
-    return true;
-}
-
 static bool storage_command_test(void) {
     static const char *path = "/vita/tmp/storage-test.txt";
     static const char *text = "vita_storage_test_v1\n";
