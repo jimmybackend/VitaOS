@@ -14,6 +14,7 @@
 #define SESSION_EXPORT_BUFFER_MAX 4096U
 
 static char g_session_export_buffer[SESSION_EXPORT_BUFFER_MAX];
+static char g_session_export_readback[VITA_STORAGE_READ_MAX];
 
 typedef struct {
     char *buf;
@@ -127,6 +128,23 @@ static void rb_kv_i32(report_builder_t *rb, const char *key, int value) {
 
 static void rb_kv_bool(report_builder_t *rb, const char *key, bool value) {
     rb_kv(rb, key, yes_no(value));
+}
+
+static bool text_exact_match(const char *a, const char *b) {
+    unsigned long i = 0;
+
+    if (!a || !b) {
+        return false;
+    }
+
+    while (a[i] && b[i]) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        i++;
+    }
+
+    return a[i] == b[i];
 }
 
 static void append_storage_status(report_builder_t *rb) {
@@ -262,7 +280,9 @@ bool session_export_write_report(const vita_command_context_t *ctx) {
 
     audit_emit_boot_event("SESSION_EXPORT_REQUESTED", SESSION_EXPORT_PATH);
 
-    if (storage_write_text(SESSION_EXPORT_PATH, g_session_export_buffer)) {
+    if (storage_write_text(SESSION_EXPORT_PATH, g_session_export_buffer) &&
+        storage_read_text(SESSION_EXPORT_PATH, g_session_export_readback, sizeof(g_session_export_readback)) &&
+        text_exact_match(g_session_export_buffer, g_session_export_readback)) {
         console_write_line("export session: written");
         console_write_line(SESSION_EXPORT_PATH);
         audit_emit_boot_event("SESSION_EXPORT_WRITTEN", SESSION_EXPORT_PATH);
@@ -271,7 +291,7 @@ bool session_export_write_report(const vita_command_context_t *ctx) {
 
     storage_get_status(&st);
     console_write_line("export session: failed");
-    console_write_line(st.last_error[0] ? st.last_error : "unknown storage error");
-    audit_emit_boot_event("SESSION_EXPORT_FAILED", st.last_error[0] ? st.last_error : "unknown storage error");
+    console_write_line(st.last_error[0] ? st.last_error : "write/read verify failed");
+    audit_emit_boot_event("SESSION_EXPORT_FAILED", st.last_error[0] ? st.last_error : "write/read verify failed");
     return false;
 }

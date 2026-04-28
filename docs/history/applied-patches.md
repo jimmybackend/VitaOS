@@ -171,6 +171,12 @@ Documento histórico consolidado de parches aplicados en VitaOS F1A/F1B.
 - Vive en: `docs/validation/f1a-f1b-validation-checklist.md`.
 - Estado actual: **Integrated**.
 
+## v33 storage readback verification hardening
+- Feature: verificación estricta write->read->compare para reportes/exportes.
+- Vive en: `kernel/command_core.c`, `kernel/session_export.c`, `kernel/session_jsonl_export.c`, `kernel/storage.c`.
+- Estado actual: **Integrated** (sin `written`/`VERIFIED` falso cuando falla read-back compare).
+- Límite: validación USB física fuera de hosted requiere prueba en hardware real.
+
 ---
 
 ## Límites explícitos del alcance F1A/F1B

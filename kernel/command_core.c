@@ -392,14 +392,62 @@ static void show_refreshed_header(vita_command_context_t *ctx) {
     console_guided_show_menu();
 }
 
-static bool write_report_pair(const char *txt_path, const char *txt_body,
-                              const char *jsonl_path, const char *jsonl_body) {
-    bool ok_txt;
-    bool ok_jsonl;
+static bool text_exact_match(const char *a, const char *b) {
+    unsigned long i = 0;
 
-    ok_txt = storage_write_text(txt_path, txt_body ? txt_body : "");
-    ok_jsonl = storage_write_text(jsonl_path, jsonl_body ? jsonl_body : "");
-    return ok_txt && ok_jsonl;
+    if (!a || !b) {
+        return false;
+    }
+
+    while (a[i] && b[i]) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        i++;
+    }
+
+    return a[i] == b[i];
+}
+
+static bool write_report_verified(const char *path, const char *body) {
+    static char readback[VITA_STORAGE_READ_MAX];
+    const char *expected = body ? body : "";
+
+    if (!storage_write_text(path, expected)) {
+        console_write_line("report write failed:");
+        console_write_line(path ? path : "(null)");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    if (!storage_read_text(path, readback, sizeof(readback))) {
+        console_write_line("report verify read failed:");
+        console_write_line(path ? path : "(null)");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    if (!text_exact_match(readback, expected)) {
+        console_write_line("report verify compare failed:");
+        console_write_line(path ? path : "(null)");
+        console_write_line("write/read verify failed");
+        return false;
+    }
+
+    return true;
+}
+
+static bool write_report_pair_verified(const char *txt_path, const char *txt_body,
+                                       const char *jsonl_path, const char *jsonl_body) {
+    if (!write_report_verified(txt_path, txt_body)) {
+        return false;
+    }
+
+    if (!write_report_verified(jsonl_path, jsonl_body)) {
+        return false;
+    }
+
+    return true;
 }
 
 static void handle_audit_readiness(const vita_command_context_t *ctx) {
@@ -429,7 +477,7 @@ static void handle_audit_export(const vita_command_context_t *ctx) {
     const char *jsonl_ok = "{\"type\":\"audit_verify\",\"status\":\"ok\",\"scope\":\"current_boot\"}\n";
     const char *jsonl_limited = "{\"type\":\"audit_verify\",\"status\":\"unavailable\",\"scope\":\"uefi_restricted\"}\n";
 
-    if (write_report_pair(txt_path,
+    if (write_report_pair_verified(txt_path,
                           (ctx && ctx->boot_status.audit_ready) ? txt_ok : txt_limited,
                           jsonl_path,
                           (ctx && ctx->boot_status.audit_ready) ? jsonl_ok : jsonl_limited)) {
@@ -451,7 +499,7 @@ static void handle_audit_events_export(const vita_command_context_t *ctx) {
     const char *jsonl = "{\"type\":\"current_session_events\",\"status\":\"exported\",\"mode\":\"minimal\"}\n";
     (void)ctx;
 
-    if (write_report_pair(txt_path, txt, jsonl_path, jsonl)) {
+    if (write_report_pair_verified(txt_path, txt, jsonl_path, jsonl)) {
         console_write_line("audit events: written");
         console_write_line(txt_path);
         console_write_line(jsonl_path);
@@ -533,7 +581,7 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
     const char *jsonl_ready = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"hosted_sqlite_ready\"}\n";
     const char *jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\"}\n";
 
-    if (write_report_pair(txt_path,
+    if (write_report_pair_verified(txt_path,
                           (ctx && ctx->boot_status.audit_ready) ? txt_ready : txt_limited,
                           jsonl_path,
                           (ctx && ctx->boot_status.audit_ready) ? jsonl_ready : jsonl_limited)) {
@@ -561,7 +609,7 @@ static void handle_export_index(void) {
         "- /vita/export/audit/current-session-events.jsonl\n";
     const char *jsonl = "{\"type\":\"export_index\",\"status\":\"written\"}\n";
 
-    if (write_report_pair(txt_path, txt, jsonl_path, jsonl)) {
+    if (write_report_pair_verified(txt_path, txt, jsonl_path, jsonl)) {
         console_write_line("export index: written");
         return;
     }
@@ -583,7 +631,7 @@ static void handle_selftest(const vita_command_context_t *ctx) {
     const char *jsonl_pass = "{\"type\":\"self_test\",\"status\":\"pass\",\"audit\":\"hosted\"}\n";
     const char *jsonl_warn = "{\"type\":\"self_test\",\"status\":\"warn\",\"audit\":\"restricted\"}\n";
 
-    if (write_report_pair(txt_path,
+    if (write_report_pair_verified(txt_path,
                           (ctx && ctx->boot_status.audit_ready) ? txt_pass : txt_warn,
                           jsonl_path,
                           (ctx && ctx->boot_status.audit_ready) ? jsonl_pass : jsonl_warn)) {

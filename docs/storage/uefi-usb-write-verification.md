@@ -9,12 +9,13 @@ Garantizar que `storage`, `notes`, `journal` y `exports` no reporten éxito si l
 ## Requisitos de implementación
 
 - Crear directorios en UEFI usando `EFI_FILE_MODE_CREATE` + `EFI_FILE_DIRECTORY`.
-- `storage repair` crea el árbol `/vita` mínimo del milestone.
-- `storage check` valida rutas reales en el backend.
+- `storage repair` crea el árbol `/vita` completo del slice F1A/F1B.
+- `storage check` valida existencia real de rutas (no solo `.keep`).
 - `storage write` asegura padres antes de escribir.
 - `storage test` hace write+read+compare y solo reporta `VERIFIED` si coincide.
 - `storage probe` hace flujo end-to-end completo.
 - `storage last-error` muestra error real.
+- `audit export`, `audit events`, `diagnostic`, `export index`, `selftest`, `export session` y `export jsonl` solo muestran `written` después de write+read+compare.
 
 ## Árbol esperado
 
@@ -62,6 +63,7 @@ storage read /vita/notes/usb-test.txt
 journal status
 journal summary
 export session
+export jsonl
 diagnostic
 export index
 selftest
@@ -87,3 +89,5 @@ shutdown
 - Sin red/Wi-Fi real.
 - Sin SQLite persistente en UEFI.
 - Hosted mantiene SQLite para validación.
+- `tools/image/make-uefi-iso.sh` es solo para boot ISO/QEMU; no promete sembrar `/vita` completo dentro del medio ISO (requires physical USB validation).
+- Para USB físico usar `tools/image/make-uefi-usb-image.sh` o ejecutar `storage repair` en el entorno writable generado por Rufus.

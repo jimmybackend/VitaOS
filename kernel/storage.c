@@ -364,7 +364,11 @@ static void set_error(const char *text) {
 static bool path_allowed(const char *path) {
     unsigned long i;
 
-    if (!path || !starts_with(path, "/vita/")) {
+    if (!path) {
+        return false;
+    }
+
+    if (!(str_eq(path, "/vita") || starts_with(path, "/vita/"))) {
         return false;
     }
 
@@ -387,13 +391,42 @@ static bool path_allowed(const char *path) {
     return true;
 }
 
+static const char *g_storage_expected_dirs[] = {
+    "/vita",
+    "/vita/config",
+    "/vita/audit",
+    "/vita/notes",
+    "/vita/messages",
+    "/vita/messages/inbox",
+    "/vita/messages/outbox",
+    "/vita/messages/drafts",
+    "/vita/emergency",
+    "/vita/emergency/reports",
+    "/vita/emergency/checklists",
+    "/vita/ai",
+    "/vita/ai/prompts",
+    "/vita/ai/responses",
+    "/vita/ai/sessions",
+    "/vita/net",
+    "/vita/net/profiles",
+    "/vita/export",
+    "/vita/export/audit",
+    "/vita/export/notes",
+    "/vita/export/reports",
+    "/vita/tmp"
+};
+
+#define STORAGE_EXPECTED_DIR_COUNT (sizeof(g_storage_expected_dirs) / sizeof(g_storage_expected_dirs[0]))
+
+static bool storage_command_probe(void);
+
 #ifdef VITA_HOSTED
 static bool hosted_ensure_parent_dirs(char *host_path);
 
 static bool hosted_ensure_dir_path(const char *path) {
     char host_path[256];
 
-    if (!path || !starts_with(path, "/vita/")) {
+    if (!path_allowed(path)) {
         return false;
     }
 
@@ -409,7 +442,7 @@ static bool hosted_path_exists(const char *path) {
     char host_path[256];
     struct stat st;
 
-    if (!path || !starts_with(path, "/vita/")) {
+    if (!path_allowed(path)) {
         return false;
     }
 
@@ -1096,7 +1129,7 @@ bool storage_write_text(const char *path, const char *text) {
     }
 
     if (!path_allowed(path)) {
-        set_error("path must start with /vita/ and must not contain '..' or ':'");
+        set_error("path must be /vita or /vita/... and must not contain '..' or ':'");
         return false;
     }
 
@@ -1120,7 +1153,7 @@ bool storage_read_text(const char *path, char *out, unsigned long out_cap) {
     out[0] = '\0';
 
     if (!path_allowed(path)) {
-        set_error("path must start with /vita/ and must not contain '..' or ':'");
+        set_error("path must be /vita or /vita/... and must not contain '..' or ':'");
         return false;
     }
 
@@ -1260,43 +1293,88 @@ static bool storage_command_list_notes(void) {
     return storage_list_notes();
 }
 
-static bool storage_tree_touch(const char *path) {
-    return storage_write_text(path, "vita_tree_marker\n");
-}
-
 static bool storage_tree_repair(void) {
+    unsigned long i;
     bool ok = true;
 
-    ok = storage_tree_touch("/vita/audit/.keep") && ok;
-    ok = storage_tree_touch("/vita/notes/.keep") && ok;
-    ok = storage_tree_touch("/vita/messages/.keep") && ok;
-    ok = storage_tree_touch("/vita/emergency/.keep") && ok;
-    ok = storage_tree_touch("/vita/ai/.keep") && ok;
-    ok = storage_tree_touch("/vita/net/.keep") && ok;
-    ok = storage_tree_touch("/vita/export/.keep") && ok;
-    ok = storage_tree_touch("/vita/export/reports/.keep") && ok;
-    ok = storage_tree_touch("/vita/export/audit/.keep") && ok;
-    ok = storage_tree_touch("/vita/tmp/.keep") && ok;
+    for (i = 0; i < STORAGE_EXPECTED_DIR_COUNT; ++i) {
+        if (!storage_ensure_directory(g_storage_expected_dirs[i])) {
+            ok = false;
+            break;
+        }
+    }
 
     return ok;
 }
 
 static bool storage_tree_check(void) {
-    char text[VITA_STORAGE_READ_MAX];
+    unsigned long i;
     bool ok = true;
 
-    ok = storage_read_text("/vita/audit/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/notes/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/messages/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/emergency/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/ai/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/net/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/export/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/export/reports/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/export/audit/.keep", text, sizeof(text)) && ok;
-    ok = storage_read_text("/vita/tmp/.keep", text, sizeof(text)) && ok;
+    for (i = 0; i < STORAGE_EXPECTED_DIR_COUNT; ++i) {
+        if (!storage_path_exists(g_storage_expected_dirs[i])) {
+            set_error("storage tree missing expected directory");
+            console_write_line("missing:");
+            console_write_line(g_storage_expected_dirs[i]);
+            ok = false;
+            break;
+        }
+    }
+
+    if (ok) {
+        set_error("ok");
+    }
 
     return ok;
+}
+
+static bool storage_command_probe(void) {
+    static const char *path = "/vita/tmp/storage-probe.txt";
+    static const char *text = "vita_storage_probe_v1\n";
+    char readback[VITA_STORAGE_READ_MAX];
+
+    console_write_line("storage probe: status/backend");
+    storage_show_status();
+
+    console_write_line("storage probe: repair/check");
+    if (!storage_tree_repair()) {
+        console_write_line("storage probe: repair failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+    if (!storage_tree_check()) {
+        console_write_line("storage probe: check failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    console_write_line("storage probe: create/write");
+    if (!storage_write_text(path, text)) {
+        console_write_line("storage probe: write failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    console_write_line("storage probe: read");
+    if (!storage_read_text(path, readback, sizeof(readback))) {
+        console_write_line("storage probe: read failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    console_write_line("storage probe: compare");
+    if (!str_eq(readback, text)) {
+        console_write_line("storage probe: compare failed");
+        console_write_line("write/read mismatch");
+        set_error("write/read verify failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    console_write_line("storage probe: ok");
+    console_write_line(path);
+    set_error("ok");
+    return true;
 }
 
 
@@ -1351,8 +1429,16 @@ bool storage_handle_command(const char *cmd) {
     }
 
     if (str_eq(cmd, "storage tree")) {
+        unsigned long i;
         console_write_line("/vita tree expected:");
-        console_write_line("/vita/audit /vita/notes /vita/messages /vita/emergency /vita/ai /vita/net /vita/export /vita/tmp");
+        for (i = 0; i < STORAGE_EXPECTED_DIR_COUNT; ++i) {
+            console_write_line(g_storage_expected_dirs[i]);
+        }
+        return true;
+    }
+
+    if (str_eq(cmd, "storage last-error")) {
+        console_write_line(storage_last_error());
         return true;
     }
 
