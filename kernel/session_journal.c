@@ -13,6 +13,7 @@
 #include <vita/console.h>
 #include <vita/session_journal.h>
 #include <vita/storage.h>
+#include <vita/storage.h>
 
 #define SESSION_JOURNAL_JSONL_PATH "/vita/audit/session-journal.jsonl"
 #define SESSION_JOURNAL_TEXT_PATH  "/vita/audit/session-journal.txt"
@@ -411,6 +412,13 @@ bool session_journal_init(void) {
 
     journal_add_event("journal_started", "persistent session journal active", false);
 
+    if (!g_journal.last_flush_ok) {
+        g_journal.active = false;
+        console_write_line("journal: inactive, storage write failed");
+        console_write_line(g_journal.last_error[0] ? g_journal.last_error : "unknown");
+        return false;
+    }
+
     console_write_line("Persistent journal: READY / Bitacora persistente: LISTA");
     console_write_line(SESSION_JOURNAL_JSONL_PATH);
     console_write_line(SESSION_JOURNAL_TEXT_PATH);
@@ -487,13 +495,39 @@ static void journal_print_text(void) {
     }
 }
 
+static void journal_show_last_session_file(void) {
+    char text[VITA_STORAGE_READ_MAX];
+
+    if (!storage_read_text(SESSION_JOURNAL_TEXT_PATH, text, sizeof(text))) {
+        console_write_line("journal last-session: unavailable");
+        return;
+    }
+
+    console_write_line("--- journal last-session / ultima sesion ---");
+    console_write_line(text[0] ? text : "(empty / vacio)");
+    console_write_line("--- end / fin ---");
+}
+
+static void journal_recover(void) {
+    if (session_journal_flush()) {
+        console_write_line("journal recover: flush ok");
+    } else {
+        console_write_line("journal recover: flush not available");
+    }
+
+    journal_show_last_session_file();
+}
+
 bool session_journal_handle_command(const char *cmd) {
     const char *args;
+    bool journal_family;
 
     if (!cmd) {
         session_journal_show_status();
         return true;
     }
+
+    journal_family = starts_with(cmd, "journal");
 
     if (str_eq(cmd, "journal") || str_eq(cmd, "journal status")) {
         session_journal_show_status();
@@ -521,6 +555,22 @@ bool session_journal_handle_command(const char *cmd) {
         return true;
     }
 
+    if (str_eq(cmd, "journal summary")) {
+        session_journal_show_status();
+        console_write_line("journal summary: use 'journal show' for full log");
+        return true;
+    }
+
+    if (str_eq(cmd, "journal last-session") || str_eq(cmd, "journal last")) {
+        journal_show_last_session_file();
+        return true;
+    }
+
+    if (str_eq(cmd, "journal recover")) {
+        journal_recover();
+        return true;
+    }
+
     if (starts_with(cmd, "journal note ")) {
         args = skip_spaces(cmd + str_len("journal note "));
         if (!args[0]) {
@@ -541,6 +591,10 @@ bool session_journal_handle_command(const char *cmd) {
         console_write_line("journal paths");
         console_write_line("journal note text");
         return true;
+    }
+
+    if (!journal_family) {
+        return false;
     }
 
     console_write_line("journal: unknown command");

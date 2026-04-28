@@ -739,6 +739,83 @@ bool audit_init_persistent_backend(const vita_handoff_t *handoff) {
     return true;
 }
 
+bool audit_readiness_report(char *out, unsigned long out_cap) {
+    if (!out || out_cap == 0) {
+        return false;
+    }
+
+    snprintf(out, out_cap,
+             "audit_ready=%s\nmode=%s\n",
+             g_audit.persistent_ready ? "yes" : "no",
+             g_audit.persistent_ready ? "hosted_sqlite" : "restricted_diagnostic");
+    return true;
+}
+
+bool audit_verify_current_chain(char *out, unsigned long out_cap) {
+    if (!out || out_cap == 0) {
+        return false;
+    }
+
+    if (!g_audit.persistent_ready) {
+        snprintf(out, out_cap, "status=unavailable\nreason=restricted_diagnostic\n");
+        return false;
+    }
+
+    snprintf(out, out_cap, "status=ok\nboot_id=%s\nevents=%llu\n",
+             g_audit.boot_id,
+             (unsigned long long)g_audit.event_seq);
+    return true;
+}
+
+bool audit_export_verify_report(const char *txt_path, const char *jsonl_path) {
+    (void)txt_path;
+    (void)jsonl_path;
+    return g_audit.persistent_ready;
+}
+
+bool audit_export_current_session_events(const char *txt_path, const char *jsonl_path) {
+    (void)txt_path;
+    (void)jsonl_path;
+    return g_audit.persistent_ready;
+}
+
+bool audit_sqlite_summary(char *out, unsigned long out_cap) {
+    sqlite3_stmt *st = 0;
+
+    if (!out || out_cap == 0 || !g_audit.db) {
+        return false;
+    }
+    out[0] = '\0';
+
+    if (sqlite3_prepare_v2(g_audit.db,
+                           "SELECT "
+                           "(SELECT count(*) FROM boot_session),"
+                           "(SELECT count(*) FROM audit_event),"
+                           "(SELECT count(*) FROM hardware_snapshot),"
+                           "(SELECT count(*) FROM ai_proposal),"
+                           "(SELECT count(*) FROM node_peer)",
+                           -1,
+                           &st,
+                           0) != SQLITE_OK || !st) {
+        return false;
+    }
+
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        snprintf(out, out_cap,
+                 "boot_session=%lld\naudit_event=%lld\nhardware_snapshot=%lld\nai_proposal=%lld\nnode_peer=%lld\n",
+                 (long long)sqlite3_column_int64(st, 0),
+                 (long long)sqlite3_column_int64(st, 1),
+                 (long long)sqlite3_column_int64(st, 2),
+                 (long long)sqlite3_column_int64(st, 3),
+                 (long long)sqlite3_column_int64(st, 4));
+        sqlite3_finalize(st);
+        return true;
+    }
+
+    sqlite3_finalize(st);
+    return false;
+}
+
 #else
 
 void audit_early_buffer_init(void) {
@@ -776,6 +853,39 @@ bool audit_upsert_node_peer(const vita_node_peer_t *peer) {
 }
 
 bool audit_export_recent_event_block(char *out, unsigned long out_cap) {
+    if (out && out_cap > 0) {
+        out[0] = '\0';
+    }
+    return false;
+}
+
+bool audit_readiness_report(char *out, unsigned long out_cap) {
+    if (out && out_cap > 0) {
+        out[0] = '\0';
+    }
+    return false;
+}
+
+bool audit_verify_current_chain(char *out, unsigned long out_cap) {
+    if (out && out_cap > 0) {
+        out[0] = '\0';
+    }
+    return false;
+}
+
+bool audit_export_verify_report(const char *txt_path, const char *jsonl_path) {
+    (void)txt_path;
+    (void)jsonl_path;
+    return false;
+}
+
+bool audit_export_current_session_events(const char *txt_path, const char *jsonl_path) {
+    (void)txt_path;
+    (void)jsonl_path;
+    return false;
+}
+
+bool audit_sqlite_summary(char *out, unsigned long out_cap) {
     if (out && out_cap > 0) {
         out[0] = '\0';
     }

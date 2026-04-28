@@ -6,9 +6,11 @@ TEST_DIR=build/test
 LOG_FILE="$TEST_DIR/smoke-audit.log"
 MOCK_LOG="$TEST_DIR/vitanet-mock.log"
 REPL_FILE="$TEST_DIR/vitanet-audit-block.txt"
+MOCK_SRC="$TEST_DIR/vitanet-mock.c"
+MOCK_BIN="$TEST_DIR/vitanet-mock"
 
 mkdir -p "$TEST_DIR" "$(dirname "$DB_PATH")"
-rm -f "$DB_PATH" "$LOG_FILE" "$MOCK_LOG" "$REPL_FILE"
+rm -f "$DB_PATH" "$LOG_FILE" "$MOCK_LOG" "$REPL_FILE" "$MOCK_SRC" "$MOCK_BIN"
 
 cleanup() {
   if [[ -n "${MOCK_PID:-}" ]]; then
@@ -18,49 +20,101 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python3 - "$REPL_FILE" >"$MOCK_LOG" 2>&1 <<'PY' &
-import socket
-import sys
-import time
+cat >"$MOCK_SRC" <<'C_EOF'
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-outfile = sys.argv[1]
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(("127.0.0.1", 47001))
-sock.settimeout(0.25)
+int main(int argc, char **argv) {
+    int fd;
+    struct sockaddr_in addr;
+    struct sockaddr_in from;
+    socklen_t from_len = sizeof(from);
+    char buf[2048];
+    bool hello_sent = false;
+    bool caps_sent = false;
+    bool heartbeat_sent = false;
+    const char *outfile;
 
-deadline = time.time() + 6.0
-hello_sent = False
-caps_sent = False
-heartbeat_sent = False
+    if (argc < 2) {
+        fprintf(stderr, "usage: %s out_file\\n", argv[0]);
+        return 2;
+    }
 
-while time.time() < deadline:
-    try:
-        data, addr = sock.recvfrom(2048)
-    except socket.timeout:
-        continue
+    outfile = argv[1];
 
-    msg = data.decode("utf-8", errors="replace").strip()
-    print(msg, flush=True)
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        perror("socket");
+        return 1;
+    }
 
-    if msg.startswith("HELLO ") and not hello_sent:
-        sock.sendto(b"HELLO peer-smoke", addr)
-        hello_sent = True
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(47001);
 
-    if msg.startswith("CAPS ") and not caps_sent:
-        sock.sendto(b'CAPS {"audit_replication_v0":true,"node_task_v0":true,"peer_role":"smoke"}', addr)
-        caps_sent = True
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind");
+        close(fd);
+        return 1;
+    }
 
-    if hello_sent and caps_sent and not heartbeat_sent:
-        sock.sendto(b"HEARTBEAT", addr)
-        heartbeat_sent = True
+    for (;;) {
+        ssize_t n = recvfrom(fd, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&from, &from_len);
+        if (n <= 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
 
-    if msg.startswith("AUDIT_BLOCK "):
-        with open(outfile, "w", encoding="utf-8") as f:
-            f.write(msg[len("AUDIT_BLOCK "):])
-        break
+        buf[n] = '\0';
+        fprintf(stdout, "%s\\n", buf);
+        fflush(stdout);
 
-sock.close()
-PY
+        if (strncmp(buf, "HELLO ", 6) == 0 && !hello_sent) {
+            const char *reply = "HELLO peer-smoke";
+            sendto(fd, reply, strlen(reply), 0, (struct sockaddr *)&from, from_len);
+            hello_sent = true;
+        }
+
+        if (strncmp(buf, "CAPS ", 5) == 0 && !caps_sent) {
+            const char *reply = "CAPS {\"audit_replication_v0\":true,\"node_task_v0\":true,\"peer_role\":\"smoke\"}";
+            sendto(fd, reply, strlen(reply), 0, (struct sockaddr *)&from, from_len);
+            caps_sent = true;
+        }
+
+        if (hello_sent && caps_sent && !heartbeat_sent) {
+            const char *reply = "HEARTBEAT";
+            sendto(fd, reply, strlen(reply), 0, (struct sockaddr *)&from, from_len);
+            heartbeat_sent = true;
+        }
+
+        if (strncmp(buf, "AUDIT_BLOCK ", 12) == 0) {
+            FILE *f = fopen(outfile, "w");
+            if (f) {
+                fputs(buf + 12, f);
+                fclose(f);
+            }
+            break;
+        }
+    }
+
+    close(fd);
+    return 0;
+}
+C_EOF
+
+${CC:-cc} -O2 -Wall -Wextra -Werror "$MOCK_SRC" -o "$MOCK_BIN"
+"$MOCK_BIN" "$REPL_FILE" >"$MOCK_LOG" 2>&1 &
 MOCK_PID=$!
 
 sleep 0.2
@@ -186,40 +240,35 @@ if ! grep -q "display_count:" "$LOG_FILE"; then
   exit 1
 fi
 
-python3 - "$DB_PATH" <<'PY'
-import hashlib
-import sqlite3
-import sys
+prev=""
+expected_seq=1
+while IFS=$'\t' read -r boot_id seq etype sev actor summary details mono prev_hash event_hash; do
+  [[ -z "${seq:-}" ]] && continue
 
-db = sys.argv[1]
-con = sqlite3.connect(db)
-rows = con.execute(
-    """
-    select boot_id,event_seq,event_type,severity,actor_type,summary,details_json,monotonic_ns,coalesce(prev_hash,''),event_hash
-    from audit_event
-    order by id asc
-    """
-).fetchall()
+  if [[ "$seq" -ne "$expected_seq" ]]; then
+    echo "smoke failed: event_seq discontinuity: got $seq, expected $expected_seq" >&2
+    exit 1
+  fi
 
-if not rows:
-    raise SystemExit("no rows")
+  if [[ "$prev_hash" == "-" ]]; then
+    prev_hash=""
+  fi
 
-prev = ""
-expected_seq = 1
-for r in rows:
-    boot_id, seq, etype, sev, actor, summary, details, mono, prev_hash, event_hash = r
-    if seq != expected_seq:
-        raise SystemExit(f"event_seq discontinuity: got {seq}, expected {expected_seq}")
-    if prev_hash != prev:
-        raise SystemExit(f"prev_hash discontinuity at seq {seq}")
-    payload = f"{boot_id}|{seq}|{etype}|{sev}|{actor}|{summary}|{details}|{mono}|{prev_hash}"
-    digest = hashlib.sha256(payload.encode()).hexdigest()
-    if digest != event_hash:
-        raise SystemExit(f"event_hash mismatch at seq {seq}")
-    prev = event_hash
-    expected_seq += 1
+  if [[ "$prev_hash" != "$prev" ]]; then
+    echo "smoke failed: prev_hash discontinuity at seq $seq" >&2
+    exit 1
+  fi
 
-print("audit chain ok")
-PY
+  payload="${boot_id}|${seq}|${etype}|${sev}|${actor}|${summary}|${details}|${mono}|${prev_hash}"
+  digest=$(printf '%s' "$payload" | sha256sum | awk '{print $1}')
+
+  if [[ "$digest" != "$event_hash" ]]; then
+    echo "smoke failed: event_hash mismatch at seq $seq" >&2
+    exit 1
+  fi
+
+  prev="$event_hash"
+  expected_seq=$((expected_seq + 1))
+done < <(sqlite3 -tabs "$DB_PATH" "select boot_id,event_seq,event_type,severity,actor_type,summary,details_json,monotonic_ns,coalesce(nullif(prev_hash,''),'-'),event_hash from audit_event order by id asc;")
 
 echo "smoke-audit ok"
