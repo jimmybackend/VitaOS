@@ -217,6 +217,13 @@ void kmain(const vita_handoff_t *handoff) {
 
     if (storage_init(handoff)) {
         audit_emit_boot_event("STORAGE_READY", "storage initialized");
+        if (storage_bootstrap_persistent_tree()) {
+            audit_emit_boot_event("STORAGE_BOOTSTRAP_VERIFIED", "storage bootstrap verified");
+        } else {
+            audit_emit_boot_event("STORAGE_BOOTSTRAP_FAILED", storage_last_error());
+            console_write_line("storage bootstrap: failed");
+            console_write_line(storage_last_error());
+        }
     } else {
         audit_emit_boot_event("STORAGE_UNAVAILABLE", "storage not initialized");
     }

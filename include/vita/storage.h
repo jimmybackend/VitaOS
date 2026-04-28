@@ -19,6 +19,8 @@ typedef enum {
 typedef struct {
     bool initialized;
     bool writable;
+    bool bootstrap_attempted;
+    bool bootstrap_verified;
     vita_storage_backend_t backend;
     char backend_name[32];
     char root_hint[64];
@@ -27,6 +29,8 @@ typedef struct {
 
 bool storage_init(const vita_handoff_t *handoff);
 bool storage_is_ready(void);
+bool storage_bootstrap_persistent_tree(void);
+bool storage_is_bootstrap_verified(void);
 void storage_get_status(vita_storage_status_t *out_status);
 void storage_show_status(void);
 bool storage_write_text(const char *path, const char *text);

@@ -13,7 +13,6 @@
 #include <vita/console.h>
 #include <vita/session_journal.h>
 #include <vita/storage.h>
-#include <vita/storage.h>
 
 #define SESSION_JOURNAL_JSONL_PATH "/vita/audit/session-journal.jsonl"
 #define SESSION_JOURNAL_TEXT_PATH  "/vita/audit/session-journal.txt"
@@ -336,6 +335,8 @@ static void append_text_record(const char *type, const char *summary, bool redac
 
 bool session_journal_flush(void) {
     vita_storage_status_t st;
+    static char readback_jsonl[VITA_STORAGE_READ_MAX];
+    static char readback_text[VITA_STORAGE_READ_MAX];
     bool ok_jsonl;
     bool ok_text;
 
@@ -347,7 +348,11 @@ bool session_journal_flush(void) {
     ok_jsonl = storage_write_text(SESSION_JOURNAL_JSONL_PATH, g_journal.jsonl);
     ok_text = storage_write_text(SESSION_JOURNAL_TEXT_PATH, g_journal.text);
 
-    if (ok_jsonl && ok_text) {
+    if (ok_jsonl && ok_text &&
+        storage_read_text(SESSION_JOURNAL_JSONL_PATH, readback_jsonl, sizeof(readback_jsonl)) &&
+        storage_read_text(SESSION_JOURNAL_TEXT_PATH, readback_text, sizeof(readback_text)) &&
+        str_eq(readback_jsonl, g_journal.jsonl) &&
+        str_eq(readback_text, g_journal.text)) {
         g_journal.last_flush_ok = true;
         set_error("ok");
         return true;
@@ -387,7 +392,7 @@ bool session_journal_init(void) {
     vita_storage_status_t st;
 
     g_journal.initialized = true;
-    g_journal.active = storage_is_ready();
+    g_journal.active = storage_is_bootstrap_verified();
     g_journal.truncated = false;
     g_journal.last_flush_ok = false;
     g_journal.seq = 0;
@@ -399,7 +404,7 @@ bool session_journal_init(void) {
 
     if (!g_journal.active) {
         storage_get_status(&st);
-        set_error(st.last_error[0] ? st.last_error : "storage unavailable");
+        set_error(st.last_error[0] ? st.last_error : "storage bootstrap unavailable");
         console_write_line("Persistent journal: unavailable / Bitacora persistente: no disponible");
         console_write_line(g_journal.last_error);
         return false;
@@ -414,7 +419,7 @@ bool session_journal_init(void) {
 
     if (!g_journal.last_flush_ok) {
         g_journal.active = false;
-        console_write_line("journal: inactive, storage write failed");
+        console_write_line("journal: inactive, write/read verification failed");
         console_write_line(g_journal.last_error[0] ? g_journal.last_error : "unknown");
         return false;
     }
