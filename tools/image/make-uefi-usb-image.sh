@@ -10,6 +10,8 @@ set -euo pipefail
 # - one EFI System Partition (FAT32)
 # - EFI/BOOT/BOOTX64.EFI copied from build/efi/EFI/BOOT/BOOTX64.EFI
 # - /img/1.bmp ... /img/4.bmp copied as boot splash frames
+# - /vita writable directory tree prepared for future audit, notes, messages,
+#   emergency reports, network profiles, AI sessions, exports, and temporary files
 #
 # This script does NOT write to a physical USB device by itself.
 # It only creates an image that can be tested in QEMU or written manually with dd.
@@ -18,6 +20,8 @@ IMAGE_PATH=${1:-build/image/vitaos-uefi-live.img}
 IMAGE_SIZE_MIB=${IMAGE_SIZE_MIB:-128}
 BUILD_EFI=${BUILD_EFI:-1}
 EFI_BINARY=${EFI_BINARY:-build/efi/EFI/BOOT/BOOTX64.EFI}
+USB_LAYOUT_DOC=${USB_LAYOUT_DOC:-docs/storage/usb-layout.md}
+VITA_SEED_DIR=${VITA_SEED_DIR:-build/image/vita-usb-seed}
 SPLASH_ASSETS=(
   "img/1.bmp"
   "img/2.bmp"
@@ -68,6 +72,8 @@ check_tools() {
   need_cmd mcopy
   need_cmd mdir
   need_cmd truncate
+  need_cmd mkdir
+  need_cmd rm
 }
 
 check_mkfs_offset_support() {
@@ -84,6 +90,12 @@ check_splash_assets() {
       fail "missing splash asset: $asset"
     fi
   done
+}
+
+check_usb_layout_doc() {
+  if [[ ! -f "$USB_LAYOUT_DOC" ]]; then
+    fail "USB layout documentation not found: $USB_LAYOUT_DOC"
+  fi
 }
 
 build_efi_if_needed() {
@@ -150,10 +162,104 @@ copy_splash_assets() {
   done
 }
 
+prepare_vita_seed_files() {
+  info "preparing VitaOS writable seed files"
+
+  rm -rf "$VITA_SEED_DIR"
+  mkdir -p "$VITA_SEED_DIR"
+
+  cat >"$VITA_SEED_DIR/vitaos.cfg" <<'CFG'
+# VitaOS base configuration placeholder.
+# This file is reserved for future F1A/F1B runtime settings.
+language=es,en
+console=text-guided
+CFG
+
+  cat >"$VITA_SEED_DIR/network.cfg" <<'CFG'
+# VitaOS network profile placeholder.
+# No credentials are active yet.
+# Future keys may include:
+# ethernet=auto
+# ai_gateway_host=
+# ai_gateway_port=
+CFG
+
+  cat >"$VITA_SEED_DIR/ai.cfg" <<'CFG'
+# VitaOS AI gateway placeholder.
+# Remote assistant transport is not active until network support is implemented.
+mode=local-fallback
+CFG
+
+  cat >"$VITA_SEED_DIR/notes-readme.txt" <<'TXT'
+VitaOS notes directory.
+Future note/editor commands will save human-written notes here.
+TXT
+
+  cat >"$VITA_SEED_DIR/messages-readme.txt" <<'TXT'
+VitaOS messages directory.
+Future network/AI commands may place inbound, outbound, and draft messages here.
+TXT
+
+  cat >"$VITA_SEED_DIR/emergency-readme.txt" <<'TXT'
+VitaOS emergency directory.
+Future emergency reports, checklists, and session summaries will live here.
+TXT
+}
+
+create_vita_data_tree() {
+  info "creating /vita writable directory tree"
+
+  # Root area for future writable VitaOS data. The current implementation keeps
+  # this on the FAT32 USB image to stay simple and UEFI-friendly.
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita || true
+
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/config || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/audit || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/notes || true
+
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/messages || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/messages/inbox || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/messages/outbox || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/messages/drafts || true
+
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/emergency || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/emergency/reports || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/emergency/checklists || true
+
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/ai || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/ai/prompts || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/ai/responses || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/ai/sessions || true
+
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/net || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/net/profiles || true
+
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/export || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/export/audit || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/export/notes || true
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/export/reports || true
+
+  MTOOLS_SKIP_CHECK=1 mmd -i "$MTOOLS_IMAGE" ::/vita/tmp || true
+}
+
+copy_vita_seed_files() {
+  info "copying VitaOS writable tree README and placeholder files"
+
+  MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$USB_LAYOUT_DOC" ::/vita/README.txt
+
+  MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$VITA_SEED_DIR/vitaos.cfg" ::/vita/config/vitaos.cfg
+  MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$VITA_SEED_DIR/network.cfg" ::/vita/config/network.cfg
+  MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$VITA_SEED_DIR/ai.cfg" ::/vita/config/ai.cfg
+
+  MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$VITA_SEED_DIR/notes-readme.txt" ::/vita/notes/README.txt
+  MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$VITA_SEED_DIR/messages-readme.txt" ::/vita/messages/README.txt
+  MTOOLS_SKIP_CHECK=1 mcopy -o -i "$MTOOLS_IMAGE" "$VITA_SEED_DIR/emergency-readme.txt" ::/vita/emergency/README.txt
+}
+
 verify_image() {
   local asset
 
-  info "verifying EFI boot file and splash frames exist inside image"
+  info "verifying EFI boot file, splash frames, and /vita tree exist inside image"
 
   if ! MTOOLS_SKIP_CHECK=1 mdir -i "$MTOOLS_IMAGE" ::/EFI/BOOT/BOOTX64.EFI >/dev/null 2>&1; then
     fail "BOOTX64.EFI was not copied correctly into the image"
@@ -164,6 +270,18 @@ verify_image() {
       fail "$asset was not copied correctly into the image"
     fi
   done
+
+  if ! MTOOLS_SKIP_CHECK=1 mdir -i "$MTOOLS_IMAGE" ::/vita/README.txt >/dev/null 2>&1; then
+    fail "/vita/README.txt was not copied correctly into the image"
+  fi
+
+  if ! MTOOLS_SKIP_CHECK=1 mdir -i "$MTOOLS_IMAGE" ::/vita/config/vitaos.cfg >/dev/null 2>&1; then
+    fail "/vita/config/vitaos.cfg was not copied correctly into the image"
+  fi
+
+  if ! MTOOLS_SKIP_CHECK=1 mdir -i "$MTOOLS_IMAGE" ::/vita/notes/README.txt >/dev/null 2>&1; then
+    fail "/vita/notes/README.txt was not copied correctly into the image"
+  fi
 }
 
 print_next_steps() {
@@ -171,6 +289,18 @@ print_next_steps() {
 
 [vitaos-image] Image ready:
   $IMAGE_PATH
+
+[vitaos-image] Writable VitaOS tree prepared inside the FAT32 image:
+  /vita/README.txt
+  /vita/config/
+  /vita/audit/
+  /vita/notes/
+  /vita/messages/
+  /vita/emergency/
+  /vita/ai/
+  /vita/net/
+  /vita/export/
+  /vita/tmp/
 
 [vitaos-image] QEMU test example:
   qemu-system-x86_64 \\
@@ -201,12 +331,16 @@ main() {
   check_tools
   check_mkfs_offset_support
   check_splash_assets
+  check_usb_layout_doc
   build_efi_if_needed
   create_empty_image
   create_gpt_layout
   format_efi_partition
   copy_efi_files
   copy_splash_assets
+  prepare_vita_seed_files
+  create_vita_data_tree
+  copy_vita_seed_files
   verify_image
   print_next_steps
 }
