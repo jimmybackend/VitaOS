@@ -29,13 +29,13 @@ Documento histórico consolidado de parches aplicados en VitaOS F1A/F1B.
 ## v6 storage FAT writer
 - Feature/comandos: `storage status`, `storage test`, `storage write`.
 - Vive en: `kernel/storage.c`, `include/vita/storage.h`, `kernel/command_core.c`, `Makefile`.
-- Estado actual: **Integrated** (hosted + UEFI Simple FS con creación/aseguramiento de directorios padres).
+- Estado actual: **Integrated** (hosted + UEFI Simple FS path).
 - Límite: escritor de texto mínimo.
 
 ## v7 note editor
 - Feature/comandos: `notes`, `note ...`, `notes list`.
 - Vive en: `kernel/editor.c`, `include/vita/editor.h`, `kernel/command_core.c`.
-- Estado actual: **Integrated** (reporta fallo real de guardado si storage falla).
+- Estado actual: **Integrated**.
 - Límite: consola texto, sin GUI.
 
 ## v8 storage read notes
@@ -69,7 +69,7 @@ Documento histórico consolidado de parches aplicados en VitaOS F1A/F1B.
 - Feature/comandos: `journal status/show/flush/paths/note/help`.
 - Salida: `/vita/audit/session-journal.txt`, `/vita/audit/session-journal.jsonl`.
 - Vive en: `kernel/session_journal.c`, `include/vita/session_journal.h`, `kernel/kmain.c`, `kernel/command_core.c`.
-- Estado actual: **Integrated** (no reporta activo si el flush inicial en storage falla).
+- Estado actual: **Integrated**.
 
 ## v14 neon terminal shell
 - Feature: shell textual centrado/neon en flujo EFI cuando aplica.
@@ -114,7 +114,7 @@ Documento histórico consolidado de parches aplicados en VitaOS F1A/F1B.
 ## v22 storage tree validator
 - Feature/comandos: `storage tree`, `storage check`, `storage repair`, `storage validate/verify/init-tree/mkdirs`.
 - Vive en: `kernel/storage.c`, `kernel/command_core.c`.
-- Estado actual: **Integrated** (creación/validación real de árbol `/vita` en backend activo).
+- Estado actual: **Integrated** (árbol mínimo `/vita`).
 
 ## v23 journal recovery
 - Feature/comandos: `journal summary`, `journal last-session`, `journal last`, `journal recover`.

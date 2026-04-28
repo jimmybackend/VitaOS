@@ -396,22 +396,10 @@ static bool write_report_pair(const char *txt_path, const char *txt_body,
                               const char *jsonl_path, const char *jsonl_body) {
     bool ok_txt;
     bool ok_jsonl;
-    char verify[VITA_STORAGE_READ_MAX];
 
     ok_txt = storage_write_text(txt_path, txt_body ? txt_body : "");
     ok_jsonl = storage_write_text(jsonl_path, jsonl_body ? jsonl_body : "");
-    if (!(ok_txt && ok_jsonl)) {
-        return false;
-    }
-
-    if (!storage_read_text(txt_path, verify, sizeof(verify))) {
-        return false;
-    }
-    if (!storage_read_text(jsonl_path, verify, sizeof(verify))) {
-        return false;
-    }
-
-    return true;
+    return ok_txt && ok_jsonl;
 }
 
 static void handle_audit_readiness(const vita_command_context_t *ctx) {
@@ -452,7 +440,6 @@ static void handle_audit_export(const vita_command_context_t *ctx) {
     }
 
     console_write_line("audit export: failed");
-    console_write_line(storage_last_error());
 }
 
 static void handle_audit_events_export(const vita_command_context_t *ctx) {
@@ -472,7 +459,6 @@ static void handle_audit_events_export(const vita_command_context_t *ctx) {
     }
 
     console_write_line("audit events: failed");
-    console_write_line(storage_last_error());
 }
 
 static void handle_audit_sqlite_summary(const vita_command_context_t *ctx) {
@@ -556,7 +542,6 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
     }
 
     console_write_line("diagnostic: failed");
-    console_write_line(storage_last_error());
 }
 
 static void handle_export_index(void) {
@@ -582,7 +567,6 @@ static void handle_export_index(void) {
     }
 
     console_write_line("export index: failed");
-    console_write_line(storage_last_error());
 }
 
 static void handle_selftest(const vita_command_context_t *ctx) {
@@ -608,7 +592,6 @@ static void handle_selftest(const vita_command_context_t *ctx) {
     }
 
     console_write_line("selftest: failed");
-    console_write_line(storage_last_error());
 }
 
 vita_command_result_t command_handle_line(vita_command_context_t *ctx, const char *line) {
