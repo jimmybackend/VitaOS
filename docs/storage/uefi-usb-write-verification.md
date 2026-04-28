@@ -8,16 +8,20 @@ Garantizar que `storage`, `notes`, `journal` y `exports` no reporten éxito si l
 
 ## Requisitos de implementación
 
-- Crear directorios en UEFI usando `EFI_FILE_MODE_CREATE` + `EFI_FILE_DIRECTORY`.
-- `storage repair` crea el árbol `/vita` completo del slice F1A/F1B.
-- `storage check` valida existencia real de rutas (no solo `.keep`).
-- `storage write` asegura padres antes de escribir.
-- `storage test` hace write+read+compare y solo reporta `VERIFIED` si coincide.
-- `storage probe` hace flujo end-to-end completo.
+- VitaOS ejecuta **bootstrap automático de storage en boot** (`storage_bootstrap_persistent_tree()`).
+- En UEFI, VitaOS intenta seleccionar un `EFI Simple File System` realmente escribible:
+  - enumera candidatos FAT;
+  - intenta write->read->compare de marcador en cada candidato;
+  - selecciona backend solo si la verificación pasa.
+- El bootstrap crea el árbol `/vita` completo usando la lista única de directorios esperados.
+- El bootstrap ejecuta `storage_tree_repair()` + `storage_tree_check()` + marcador `write -> read -> compare` en:
+  - `/vita/tmp/boot-storage-verify.txt`
+- `storage repair` y `storage check` siguen existiendo, pero son **recuperación/diagnóstico manual**, no precondición del boot.
+- `journal` solo se marca `active` cuando el flush inicial pasa `write -> read -> compare`.
 - `storage last-error` muestra error real.
 - `audit export`, `audit events`, `diagnostic`, `export index`, `selftest`, `export session` y `export jsonl` solo muestran `written` después de write+read+compare.
 
-## Árbol esperado
+## Árbol esperado tras boot exitoso
 
 ```text
 /vita
@@ -42,26 +46,24 @@ Garantizar que `storage`, `notes`, `journal` y `exports` no reporten éxito si l
 /vita/export/notes
 /vita/export/reports
 /vita/tmp
+/vita/tmp/boot-storage-verify.txt
+/vita/audit/session-journal.txt
+/vita/audit/session-journal.jsonl
 ```
 
-## Flujo manual recomendado en USB real
+## Flujo manual recomendado en USB real (sin `storage repair` al inicio)
 
 ```text
 storage status
 storage last-error
-storage repair
 storage check
-storage probe
-storage test
-storage read /vita/tmp/storage-test.txt
-notes list
+journal status
+journal summary
 note usb-test.txt
 ...escribir contenido...
 .save
 .exit
 storage read /vita/notes/usb-test.txt
-journal status
-journal summary
 export session
 export jsonl
 diagnostic
@@ -70,14 +72,26 @@ selftest
 shutdown
 ```
 
+## Rufus/ISO: criterio honesto
+
+- VitaOS debe intentar crear `/vita` automáticamente al boot en el filesystem writable que exponga UEFI.
+- Si Rufus deja el medio en modo read-only o firmware no expone Simple File System writable, VitaOS debe fallar de forma visible y honesta:
+  - `storage: unavailable or unverified`
+  - `storage bootstrap: failed`
+  - `journal: inactive`
+  - `audit persistence: restricted diagnostic`
+- No depende de crear carpetas manualmente en Windows.
+- UEFI no promete SQLite persistente; en ese modo la persistencia mínima es `journal/jsonl` cuando el FS es escribible y verificado.
+
 ## Resultado esperado en PC host (después de extraer USB)
 
 ```text
-/vita/tmp/storage-test.txt
+/vita/tmp/boot-storage-verify.txt
 /vita/notes/usb-test.txt
 /vita/audit/session-journal.txt
 /vita/audit/session-journal.jsonl
 /vita/export/reports/last-session.txt
+/vita/export/reports/last-session.jsonl
 /vita/export/reports/diagnostic-bundle.txt
 /vita/export/export-index.txt
 /vita/export/reports/self-test.txt
@@ -89,5 +103,5 @@ shutdown
 - Sin red/Wi-Fi real.
 - Sin SQLite persistente en UEFI.
 - Hosted mantiene SQLite para validación.
-- `tools/image/make-uefi-iso.sh` es solo para boot ISO/QEMU; no promete sembrar `/vita` completo dentro del medio ISO (requires physical USB validation).
-- Para USB físico usar `tools/image/make-uefi-usb-image.sh` o ejecutar `storage repair` en el entorno writable generado por Rufus.
+- `tools/image/make-uefi-iso.sh` es solo para boot ISO/QEMU; la persistencia real depende de que el USB final sea writable.
+- La validación final sigue siendo física: retirar USB y verificar archivos desde otra computadora.

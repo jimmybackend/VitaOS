@@ -25,10 +25,12 @@
 
 #ifndef VITA_HOSTED
 #define EFI_SUCCESS 0ULL
+#define EFI_BUFFER_TOO_SMALL 5ULL
 #define EFI_FILE_MODE_READ 0x0000000000000001ULL
 #define EFI_FILE_MODE_WRITE 0x0000000000000002ULL
 #define EFI_FILE_MODE_CREATE 0x8000000000000000ULL
 #define EFI_FILE_DIRECTORY 0x0000000000000010ULL
+#define EFI_LOCATE_BY_PROTOCOL 2ULL
 
 typedef uint16_t char16_t;
 typedef uint64_t efi_status_t;
@@ -108,7 +110,11 @@ struct efi_boot_services {
 
     void *reserved;
     void *register_protocol_notify;
-    void *locate_handle;
+    efi_status_t (*locate_handle)(uint64_t search_type,
+                                  efi_guid_t *protocol,
+                                  void *search_key,
+                                  uint64_t *buffer_size,
+                                  efi_handle_t *buffer);
     void *locate_device_path;
     void *install_configuration_table;
 
@@ -222,11 +228,16 @@ static efi_guid_t g_simple_file_system_protocol_guid = {
 typedef struct {
     bool initialized;
     bool writable;
+    bool bootstrap_attempted;
+    bool bootstrap_verified;
     vita_storage_backend_t backend;
     char backend_name[32];
     char root_hint[64];
     char last_error[VITA_STORAGE_ERROR_MAX];
     const vita_handoff_t *handoff;
+#ifndef VITA_HOSTED
+    efi_handle_t uefi_fs_handle;
+#endif
 } storage_state_t;
 
 static storage_state_t g_storage;
@@ -419,6 +430,8 @@ static const char *g_storage_expected_dirs[] = {
 #define STORAGE_EXPECTED_DIR_COUNT (sizeof(g_storage_expected_dirs) / sizeof(g_storage_expected_dirs[0]))
 
 static bool storage_command_probe(void);
+static bool storage_tree_repair(void);
+static bool storage_tree_check(void);
 
 #ifdef VITA_HOSTED
 static bool hosted_ensure_parent_dirs(char *host_path);
@@ -598,9 +611,8 @@ static bool uefi_path_to_char16(const char *path, char16_t *out, unsigned long o
 static bool uefi_open_root(efi_file_protocol_t **out_root) {
     efi_system_table_t *st;
     efi_boot_services_t *bs;
-    void *loaded_iface = 0;
     void *fs_iface = 0;
-    efi_loaded_image_protocol_t *loaded;
+    efi_handle_t fs_handle = 0;
     efi_simple_file_system_protocol_t *fs;
 
     if (!out_root) {
@@ -622,20 +634,28 @@ static bool uefi_open_root(efi_file_protocol_t **out_root) {
 
     bs = st->boot_services;
 
-    if (bs->handle_protocol((efi_handle_t)g_storage.handoff->uefi_image_handle,
-                            &g_loaded_image_protocol_guid,
-                            &loaded_iface) != EFI_SUCCESS) {
-        set_error("LoadedImage protocol unavailable");
-        return false;
+    fs_handle = g_storage.uefi_fs_handle;
+    if (!fs_handle) {
+        void *loaded_iface = 0;
+        efi_loaded_image_protocol_t *loaded;
+
+        if (bs->handle_protocol((efi_handle_t)g_storage.handoff->uefi_image_handle,
+                                &g_loaded_image_protocol_guid,
+                                &loaded_iface) != EFI_SUCCESS) {
+            set_error("LoadedImage protocol unavailable");
+            return false;
+        }
+
+        loaded = (efi_loaded_image_protocol_t *)loaded_iface;
+        if (!loaded || !loaded->device_handle) {
+            set_error("LoadedImage device unavailable");
+            return false;
+        }
+
+        fs_handle = loaded->device_handle;
     }
 
-    loaded = (efi_loaded_image_protocol_t *)loaded_iface;
-    if (!loaded || !loaded->device_handle) {
-        set_error("LoadedImage device unavailable");
-        return false;
-    }
-
-    if (bs->handle_protocol(loaded->device_handle,
+    if (bs->handle_protocol(fs_handle,
                             &g_simple_file_system_protocol_guid,
                             &fs_iface) != EFI_SUCCESS) {
         set_error("SimpleFileSystem protocol unavailable");
@@ -649,6 +669,65 @@ static bool uefi_open_root(efi_file_protocol_t **out_root) {
     }
 
     return true;
+}
+
+static bool uefi_try_select_writable_fs(void) {
+    static const char *probe_path = "/vita/tmp/boot-storage-fs-probe.txt";
+    static const char *probe_text = "vita_storage_uefi_fs_probe_v1\n";
+    static char readback[VITA_STORAGE_READ_MAX];
+    efi_system_table_t *st;
+    efi_boot_services_t *bs;
+    efi_handle_t handles[64];
+    uint64_t size = sizeof(handles);
+    uint64_t i;
+
+    if (!g_storage.handoff || !g_storage.handoff->uefi_system_table) {
+        set_error("missing UEFI handoff");
+        return false;
+    }
+
+    st = (efi_system_table_t *)g_storage.handoff->uefi_system_table;
+    if (!st || !st->boot_services || !st->boot_services->locate_handle || !st->boot_services->handle_protocol) {
+        set_error("missing UEFI boot services");
+        return false;
+    }
+    bs = st->boot_services;
+
+    if (bs->locate_handle(EFI_LOCATE_BY_PROTOCOL,
+                          &g_simple_file_system_protocol_guid,
+                          0,
+                          &size,
+                          handles) != EFI_SUCCESS) {
+        set_error("UEFI locate_handle(SimpleFileSystem) failed");
+        return false;
+    }
+
+    for (i = 0; i < (size / sizeof(efi_handle_t)); ++i) {
+        g_storage.uefi_fs_handle = handles[i];
+
+        if (!storage_tree_repair()) {
+            continue;
+        }
+
+        if (!storage_write_text(probe_path, probe_text)) {
+            continue;
+        }
+
+        if (!storage_read_text(probe_path, readback, sizeof(readback))) {
+            continue;
+        }
+
+        if (!str_eq(readback, probe_text)) {
+            continue;
+        }
+
+        set_error("ok");
+        return true;
+    }
+
+    g_storage.uefi_fs_handle = 0;
+    set_error("UEFI no writable SimpleFileSystem candidate");
+    return false;
 }
 
 static bool uefi_open_path(efi_file_protocol_t *root,
@@ -1079,6 +1158,10 @@ bool storage_is_ready(void) {
     return g_storage.initialized && g_storage.writable;
 }
 
+bool storage_is_bootstrap_verified(void) {
+    return g_storage.bootstrap_attempted && g_storage.bootstrap_verified;
+}
+
 void storage_get_status(vita_storage_status_t *out_status) {
     unsigned long i;
 
@@ -1088,6 +1171,8 @@ void storage_get_status(vita_storage_status_t *out_status) {
 
     out_status->initialized = g_storage.initialized;
     out_status->writable = g_storage.writable;
+    out_status->bootstrap_attempted = g_storage.bootstrap_attempted;
+    out_status->bootstrap_verified = g_storage.bootstrap_verified;
     out_status->backend = g_storage.backend;
 
     for (i = 0; i < sizeof(out_status->backend_name); ++i) {
@@ -1105,6 +1190,9 @@ void storage_show_status(void) {
     console_write_line("Storage / Almacenamiento:");
     console_write_line(g_storage.initialized ? "initialized: yes" : "initialized: no");
     console_write_line(g_storage.writable ? "writable: yes" : "writable: no");
+    console_write_line(g_storage.bootstrap_attempted ? "bootstrap_attempted: yes" : "bootstrap_attempted: no");
+    console_write_line(g_storage.bootstrap_verified ? "storage: verified writable" : "storage: unavailable or unverified");
+    console_write_line(g_storage.bootstrap_verified ? "storage bootstrap: verified" : "storage bootstrap: failed");
     console_write_line("backend:");
     console_write_line(g_storage.backend_name[0] ? g_storage.backend_name : "none");
     console_write_line("root_hint:");
@@ -1178,17 +1266,63 @@ bool storage_list_notes(void) {
 #endif
 }
 
+bool storage_bootstrap_persistent_tree(void) {
+    static const char *verify_path = "/vita/tmp/boot-storage-verify.txt";
+    static const char *verify_text = "vita_storage_bootstrap_verify_v1\n";
+    char readback[VITA_STORAGE_READ_MAX];
 
-static bool storage_tree_repair(void);
-static bool storage_tree_check(void);
+    g_storage.bootstrap_attempted = true;
+    g_storage.bootstrap_verified = false;
+
+    if (!g_storage.initialized || !g_storage.writable) {
+        set_error("bootstrap failed: storage unavailable");
+        return false;
+    }
+
+#ifndef VITA_HOSTED
+    if (!uefi_try_select_writable_fs()) {
+        set_error("bootstrap failed: no writable UEFI FAT filesystem");
+        return false;
+    }
+#endif
+
+    if (!storage_tree_repair()) {
+        set_error("bootstrap failed: storage_tree_repair");
+        return false;
+    }
+
+    if (!storage_tree_check()) {
+        set_error("bootstrap failed: storage_tree_check");
+        return false;
+    }
+
+    if (!storage_write_text(verify_path, verify_text)) {
+        set_error("bootstrap failed: verify marker write");
+        return false;
+    }
+
+    if (!storage_read_text(verify_path, readback, sizeof(readback))) {
+        set_error("bootstrap failed: verify marker read");
+        return false;
+    }
+
+    if (!str_eq(readback, verify_text)) {
+        set_error("bootstrap failed: verify marker compare");
+        return false;
+    }
+
+    g_storage.bootstrap_verified = true;
+    set_error("ok");
+    return true;
+}
 
 static bool storage_command_test(void) {
     static const char *path = "/vita/tmp/storage-test.txt";
     static const char *text = "vita_storage_test_v1\n";
     char readback[VITA_STORAGE_READ_MAX];
 
-    if (!storage_tree_repair()) {
-        console_write_line("storage test: repair failed");
+    if (!storage_bootstrap_persistent_tree()) {
+        console_write_line("storage test: bootstrap failed");
         console_write_line(storage_last_error());
         return false;
     }
@@ -1457,6 +1591,16 @@ bool storage_handle_command(const char *cmd) {
             return true;
         }
         console_write_line("storage check: missing tree entries (run storage repair)");
+        return false;
+    }
+
+    if (str_eq(cmd, "storage bootstrap")) {
+        if (storage_bootstrap_persistent_tree()) {
+            console_write_line("storage bootstrap: verified");
+            return true;
+        }
+        console_write_line("storage bootstrap: failed");
+        console_write_line(storage_last_error());
         return false;
     }
 

@@ -347,6 +347,52 @@ static bool editor_append_line(const char *line) {
     return true;
 }
 
+static bool text_exact_match(const char *a, const char *b) {
+    unsigned long i = 0;
+
+    if (!a || !b) {
+        return false;
+    }
+
+    while (a[i] && b[i]) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        i++;
+    }
+
+    return a[i] == b[i];
+}
+
+static bool note_bootstrap_if_missing(const char *path) {
+    static const char *seed = "vita_note_bootstrap_v1\n";
+    char readback[VITA_STORAGE_READ_MAX];
+
+    if (!path || !path[0]) {
+        return false;
+    }
+
+    if (storage_read_text(path, readback, sizeof(readback))) {
+        return true;
+    }
+
+    if (!storage_write_text(path, seed)) {
+        console_write_line("note bootstrap: write failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    if (!storage_read_text(path, readback, sizeof(readback)) || !text_exact_match(readback, seed)) {
+        console_write_line("note bootstrap: verify failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    console_write_line("note bootstrap: created");
+    console_write_line(path);
+    return true;
+}
+
 static bool editor_save_to_path(const char *path, bool force) {
     if (!path_allowed(path)) {
         console_write_line("editor: save path must be inside /vita/");
@@ -552,11 +598,22 @@ bool editor_handle_command(const char *cmd) {
     }
 
     if (str_eq(cmd, "note") || starts_with(cmd, "note ")) {
+        bool explicit_name = starts_with(cmd, "note ");
         args = str_eq(cmd, "note") ? "" : skip_spaces(cmd + str_len("note "));
         if (!build_note_path(args, path, sizeof(path))) {
             console_write_line("note: invalid note name or path");
             console_write_line("Use: note, note file.txt, append file.txt, or edit /vita/notes/file.txt");
             return false;
+        }
+
+        if (!note_bootstrap_if_missing(path)) {
+            return false;
+        }
+
+        if (explicit_name) {
+            console_write_line("note: quick-create verified");
+            console_write_line("Use: edit /vita/notes/<file> for interactive editor");
+            return true;
         }
 
         result = editor_run(path, EDITOR_OPEN_EDIT);

@@ -175,3 +175,9 @@ Optimize for:
 - audit consistency
 - milestone closure
 - complete files ready to paste
+
+## Boot storage bootstrap rule (current)
+
+- `/vita` must be prepared automatically during boot (hosted + UEFI) without requiring manual `storage repair`.
+- Do not report `storage verified`, `journal active`, `saved`, `written` or `audit ready` style claims unless write->read->compare (or equivalent verified read-back) actually succeeded.
+- For UEFI/Rufus flows, prefer selecting a writable Simple File System candidate; if no writable candidate is verifiable, fail honestly (restricted diagnostic).
