@@ -140,6 +140,8 @@ static void console_fill_state(vita_console_state_t *state,
                                const vita_boot_status_t *boot_status,
                                bool proposal_ready,
                                bool node_ready) {
+    bool operational_ready;
+
     if (!state) {
         return;
     }
@@ -157,7 +159,8 @@ static void console_fill_state(vita_console_state_t *state,
     state->node_core_ready = node_ready;
     state->peer_count = (uint32_t)((node_ready) ? node_core_peer_count() : 0);
     state->pending_proposal_count = (uint32_t)((node_ready) ? node_core_pending_proposal_count() : 0);
-    state->mode = state->audit_ready ? VITA_CONSOLE_MODE_GUIDED : VITA_CONSOLE_MODE_AUDIT;
+    operational_ready = state->audit_ready && storage_is_bootstrap_verified() && session_journal_is_active();
+    state->mode = operational_ready ? VITA_CONSOLE_MODE_GUIDED : VITA_CONSOLE_MODE_AUDIT;
 }
 
 void kmain(const vita_handoff_t *handoff) {
@@ -168,6 +171,7 @@ void kmain(const vita_handoff_t *handoff) {
     bool hw_ready = false;
     bool proposal_ready = false;
     bool node_ready = false;
+    bool operational_ready = false;
 
     mem_zero(&boot_status, sizeof(boot_status));
     mem_zero(&hw, sizeof(hw));
@@ -234,6 +238,8 @@ void kmain(const vita_handoff_t *handoff) {
         audit_emit_boot_event("SESSION_JOURNAL_UNAVAILABLE", "session journal not active");
     }
 
+    operational_ready = boot_status.audit_ready && storage_is_bootstrap_verified() && session_journal_is_active();
+
     console_banner(&boot_status);
 
     /*
@@ -261,7 +267,7 @@ void kmain(const vita_handoff_t *handoff) {
     console_guided_show_menu();
     console_guided_show_status(&console_state);
 
-    if (!boot_status.audit_ready) {
+    if (!operational_ready) {
         console_write_line("Operational mode blocked / Modo operativo bloqueado");
         console_write_line("Persistent audit is required before full guided operation.");
         console_write_line("La auditoria persistente es obligatoria antes del modo operativo completo.");
