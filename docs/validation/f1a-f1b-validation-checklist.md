@@ -53,22 +53,31 @@ Esperado:
 
 ```bash
 printf '%s\n' \
-  'storage repair' \
+  'storage status' \
+  'storage last-error' \
   'storage check' \
-  'selftest' \
-  'audit readiness' \
-  'audit verify' \
-  'audit export' \
-  'audit events' \
-  'audit sqlite' \
+  'journal status' \
+  'journal summary' \
+  'note usb-test.txt' \
+  'primera linea' \
+  '.save' \
+  '.exit' \
+  'notes list' \
+  'storage read /vita/notes/usb-test.txt' \
+  'export session' \
+  'export jsonl' \
   'diagnostic' \
   'export index' \
-  'journal summary' \
+  'selftest' \
   'shutdown' \
   | ./build/hosted/vitaos-hosted
 ```
 
-Esperado: comandos responden con estado coherente con el modo (hosted/UEFI) y no reclaman capacidades fuera del slice.
+Esperado:
+- el boot prepara `/vita` automáticamente sin `storage repair`;
+- `boot-storage-verify.txt` existe;
+- journal/exportes/notas escriben con verificación de lectura;
+- no se reclama `written/saved/active` cuando falla read-back compare.
 
 ## 5) Flujo manual UEFI (hardware real)
 

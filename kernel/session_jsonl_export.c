@@ -255,6 +255,8 @@ static void append_storage_line(jsonl_builder_t *jb) {
     json_begin(jb, "storage");
     json_prop_bool(jb, "initialized", st.initialized);
     json_prop_bool(jb, "writable", st.writable);
+    json_prop_bool(jb, "bootstrap_attempted", st.bootstrap_attempted);
+    json_prop_bool(jb, "bootstrap_verified", st.bootstrap_verified);
     json_prop_str(jb, "backend", safe_text(st.backend_name, "none"));
     json_prop_str(jb, "root_hint", safe_text(st.root_hint, "/vita"));
     json_prop_str(jb, "last_error", safe_text(st.last_error, "none"));

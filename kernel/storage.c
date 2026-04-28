@@ -222,6 +222,8 @@ static efi_guid_t g_simple_file_system_protocol_guid = {
 typedef struct {
     bool initialized;
     bool writable;
+    bool bootstrap_attempted;
+    bool bootstrap_verified;
     vita_storage_backend_t backend;
     char backend_name[32];
     char root_hint[64];
@@ -1079,6 +1081,10 @@ bool storage_is_ready(void) {
     return g_storage.initialized && g_storage.writable;
 }
 
+bool storage_is_bootstrap_verified(void) {
+    return g_storage.bootstrap_attempted && g_storage.bootstrap_verified;
+}
+
 void storage_get_status(vita_storage_status_t *out_status) {
     unsigned long i;
 
@@ -1088,6 +1094,8 @@ void storage_get_status(vita_storage_status_t *out_status) {
 
     out_status->initialized = g_storage.initialized;
     out_status->writable = g_storage.writable;
+    out_status->bootstrap_attempted = g_storage.bootstrap_attempted;
+    out_status->bootstrap_verified = g_storage.bootstrap_verified;
     out_status->backend = g_storage.backend;
 
     for (i = 0; i < sizeof(out_status->backend_name); ++i) {
@@ -1105,6 +1113,9 @@ void storage_show_status(void) {
     console_write_line("Storage / Almacenamiento:");
     console_write_line(g_storage.initialized ? "initialized: yes" : "initialized: no");
     console_write_line(g_storage.writable ? "writable: yes" : "writable: no");
+    console_write_line(g_storage.bootstrap_attempted ? "bootstrap_attempted: yes" : "bootstrap_attempted: no");
+    console_write_line(g_storage.bootstrap_verified ? "storage: verified writable" : "storage: unavailable or unverified");
+    console_write_line(g_storage.bootstrap_verified ? "storage bootstrap: verified" : "storage bootstrap: failed");
     console_write_line("backend:");
     console_write_line(g_storage.backend_name[0] ? g_storage.backend_name : "none");
     console_write_line("root_hint:");
@@ -1182,13 +1193,56 @@ bool storage_list_notes(void) {
 static bool storage_tree_repair(void);
 static bool storage_tree_check(void);
 
+bool storage_bootstrap_persistent_tree(void) {
+    static const char *verify_path = "/vita/tmp/boot-storage-verify.txt";
+    static const char *verify_text = "vita_storage_bootstrap_verify_v1\n";
+    char readback[VITA_STORAGE_READ_MAX];
+
+    g_storage.bootstrap_attempted = true;
+    g_storage.bootstrap_verified = false;
+
+    if (!g_storage.initialized || !g_storage.writable) {
+        set_error("bootstrap failed: storage unavailable");
+        return false;
+    }
+
+    if (!storage_tree_repair()) {
+        set_error("bootstrap failed: storage_tree_repair");
+        return false;
+    }
+
+    if (!storage_tree_check()) {
+        set_error("bootstrap failed: storage_tree_check");
+        return false;
+    }
+
+    if (!storage_write_text(verify_path, verify_text)) {
+        set_error("bootstrap failed: verify marker write");
+        return false;
+    }
+
+    if (!storage_read_text(verify_path, readback, sizeof(readback))) {
+        set_error("bootstrap failed: verify marker read");
+        return false;
+    }
+
+    if (!str_eq(readback, verify_text)) {
+        set_error("bootstrap failed: verify marker compare");
+        return false;
+    }
+
+    g_storage.bootstrap_verified = true;
+    set_error("ok");
+    return true;
+}
+
 static bool storage_command_test(void) {
     static const char *path = "/vita/tmp/storage-test.txt";
     static const char *text = "vita_storage_test_v1\n";
     char readback[VITA_STORAGE_READ_MAX];
 
-    if (!storage_tree_repair()) {
-        console_write_line("storage test: repair failed");
+    if (!storage_bootstrap_persistent_tree()) {
+        console_write_line("storage test: bootstrap failed");
         console_write_line(storage_last_error());
         return false;
     }
@@ -1457,6 +1511,16 @@ bool storage_handle_command(const char *cmd) {
             return true;
         }
         console_write_line("storage check: missing tree entries (run storage repair)");
+        return false;
+    }
+
+    if (str_eq(cmd, "storage bootstrap")) {
+        if (storage_bootstrap_persistent_tree()) {
+            console_write_line("storage bootstrap: verified");
+            return true;
+        }
+        console_write_line("storage bootstrap: failed");
+        console_write_line(storage_last_error());
         return false;
     }
 

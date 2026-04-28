@@ -156,6 +156,8 @@ static void append_storage_status(report_builder_t *rb) {
     rb_line(rb, "[storage]");
     rb_kv_bool(rb, "initialized: ", st.initialized);
     rb_kv_bool(rb, "writable: ", st.writable);
+    rb_kv_bool(rb, "bootstrap_attempted: ", st.bootstrap_attempted);
+    rb_kv_bool(rb, "bootstrap_verified: ", st.bootstrap_verified);
     rb_kv(rb, "backend: ", safe_text(st.backend_name, "none"));
     rb_kv(rb, "root_hint: ", safe_text(st.root_hint, "/vita"));
     rb_kv(rb, "last_error: ", safe_text(st.last_error, "none"));

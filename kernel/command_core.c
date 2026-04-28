@@ -296,18 +296,29 @@ static void show_hw(const vita_command_context_t *ctx) {
 }
 
 static void show_audit(const vita_command_context_t *ctx) {
+    vita_storage_status_t st;
+
     console_write_line("Audit / Auditoria:");
+    storage_get_status(&st);
 
     if (ctx && ctx->boot_status.audit_ready) {
         console_write_line("Audit SQLite: READY / Auditoria SQLite: LISTA");
         console_write_line("Persistent audit backend is active for this session.");
         console_write_line("La bitacora persistente esta activa para esta sesion.");
+        console_write_line(session_journal_is_active()
+            ? "audit persistence: journal/jsonl active; sqlite hosted ready"
+            : "audit persistence: sqlite hosted ready; journal inactive");
         return;
     }
 
     console_write_line("Audit SQLite: FAILED / Auditoria SQLite: FALLA");
+    console_write_line(session_journal_is_active()
+        ? "audit persistence: journal/jsonl active (restricted mode)"
+        : "audit persistence: restricted diagnostic");
     console_write_line("Restricted diagnostic mode is active.");
     console_write_line("Modo diagnostico restringido activo.");
+    console_write_line("storage_last_error:");
+    console_write_line(st.last_error[0] ? st.last_error : "none");
     console_write_line("UEFI physical boot can still run local console commands, but it must not claim full operational mode until persistent audit exists.");
     console_write_line("En UEFI fisico puedes usar comandos locales, pero el modo operativo completo requiere auditoria persistente.");
 }
