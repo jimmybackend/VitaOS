@@ -1,47 +1,17 @@
 # VitaOS F1A/F1B validation checklist
 
-Patch: `docs: add F1A/F1B validation checklist`
+Checklist operativo para validar el slice actual F1A/F1B manteniendo VitaOS text-first, audit-first y sin dependencias Python para runtime/build.
 
-This checklist validates the current VitaOS F1A/F1B base after the storage, journal, audit, export, diagnostic and self-test hardening patches.
-
-The goal is to prove that the system is still:
-
-- text-first;
-- audit-first;
-- storage-bounded under `/vita/`;
-- honest about UEFI restricted diagnostic mode;
-- free of Python runtime/build dependency for the OS path;
-- free of GUI/window-manager expansion;
-- ready for the next design phase: UEFI persistent audit backend.
-
-## 1. Clean tree preflight
-
-From the repository root:
+## 1) Preflight
 
 ```bash
 git status
 git log --oneline -8
 ```
 
-Expected:
+Esperado: árbol limpio antes de validar.
 
-- working tree clean before applying new work;
-- latest commits include recent patches such as self-test, export manifest, SQLite summary, audit events export, audit verification export.
-
-## 2. Python cleanup verification
-
-Run when the helper exists:
-
-```bash
-bash tools/patches/verify-no-python-runtime.sh
-```
-
-Expected:
-
-- no `.py` files in the repository tree;
-- no Python references in runtime/build paths.
-
-If this helper is unavailable in an older tree, verify manually:
+## 2) Verificación no-Python (obligatoria)
 
 ```bash
 find . \
@@ -50,30 +20,18 @@ find . \
   -name '*.py' -print
 ```
 
-Expected:
-
-- no output.
-
-## 3. Patch-level verifier sweep
-
-Run the available patch verifiers. It is OK if an older verifier is absent, but every verifier present in `tools/patches/` should pass.
+Esperado: sin salida.
 
 ```bash
-for f in tools/patches/verify-*.sh; do
-  echo "== $f =="
-  bash "$f"
-done
+grep -RInE '(^#!.*python|python3|[^A-Za-z0-9_]python[^A-Za-z0-9_])' \
+  Makefile arch include kernel drivers proto tools/build tools/image tools/test tests schema docs README.md
 ```
 
-Expected:
+Esperado: solo menciones documentales que indiquen que Python **NO** es dependencia del runtime/build.
 
-- every present verifier exits successfully;
-- no unexpected Python reference;
-- no missing symbols for committed patches.
+Referencia: `docs/tools/no-python-runtime.md`.
 
-## 4. Build validation
-
-Run the full build set:
+## 3) Build y smoke
 
 ```bash
 make clean
@@ -84,32 +42,20 @@ make smoke
 make iso
 ```
 
-Expected:
+Esperado:
+- build hosted OK;
+- smoke-audit OK;
+- build EFI OK;
+- smoke boot OK;
+- ISO generado.
 
-- hosted binary builds;
-- smoke-audit passes;
-- EFI binary builds;
-- smoke boot passes;
-- ISO is produced.
-
-Expected paths:
-
-```text
-build/hosted/vitaos-hosted
-build/efi/EFI/BOOT/BOOTX64.EFI
-build/iso/vitaos-uefi-live.iso
-```
-
-## 5. Hosted interactive validation
-
-Run hosted mode with a scripted command flow:
+## 4) Flujo manual hosted
 
 ```bash
 printf '%s\n' \
   'storage repair' \
   'storage check' \
-  'journal status' \
-  'journal summary' \
+  'selftest' \
   'audit readiness' \
   'audit verify' \
   'audit export' \
@@ -117,181 +63,42 @@ printf '%s\n' \
   'audit sqlite' \
   'diagnostic' \
   'export index' \
-  'selftest' \
+  'journal summary' \
   'shutdown' \
   | ./build/hosted/vitaos-hosted
 ```
 
-Expected:
+Esperado: comandos responden con estado coherente con el modo (hosted/UEFI) y no reclaman capacidades fuera del slice.
 
-- storage tree is repaired or already valid;
-- journal is active;
-- audit readiness is operational in hosted;
-- audit hash-chain verification reports OK;
-- audit exports are written;
-- diagnostic bundle is written;
-- export index is written;
-- self-test writes its report.
+## 5) Flujo manual UEFI (hardware real)
 
-## 6. Hosted output files
-
-After the hosted run, check the generated files:
-
-```bash
-ls -R build/storage/vita
-```
-
-Expected known files include some or all of:
-
-```text
-build/storage/vita/audit/session-journal.txt
-build/storage/vita/audit/session-journal.jsonl
-build/storage/vita/export/audit/audit-verify.txt
-build/storage/vita/export/audit/audit-verify.jsonl
-build/storage/vita/export/audit/current-session-events.txt
-build/storage/vita/export/audit/current-session-events.jsonl
-build/storage/vita/export/reports/diagnostic-bundle.txt
-build/storage/vita/export/reports/diagnostic-bundle.jsonl
-build/storage/vita/export/reports/self-test.txt
-build/storage/vita/export/reports/self-test.jsonl
-build/storage/vita/export/export-index.txt
-build/storage/vita/export/export-index.jsonl
-```
-
-Quick content checks:
-
-```bash
-grep -R "VitaOS" build/storage/vita/export build/storage/vita/audit || true
-grep -R "PASS\|WARN\|FAIL" build/storage/vita/export/reports/self-test.txt || true
-```
-
-Expected:
-
-- diagnostic and self-test reports contain readable status lines;
-- export index contains present/missing entries for known export paths.
-
-## 7. Hosted SQLite audit checks
-
-Inspect SQLite manually when available:
-
-```bash
-sqlite3 build/audit/vitaos-audit.db "select count(*) from boot_session;"
-sqlite3 build/audit/vitaos-audit.db "select count(*) from audit_event;"
-sqlite3 build/audit/vitaos-audit.db "select event_seq,event_type,prev_hash,event_hash from audit_event order by id limit 10;"
-```
-
-Expected:
-
-- at least one `boot_session`;
-- audit events exist;
-- `event_seq` increases in the current boot session.
-
-The console command should also work:
-
-```bash
-printf '%s\n' 'audit sqlite' 'shutdown' | ./build/hosted/vitaos-hosted
-```
-
-Expected:
-
-- hosted SQLite summary shows boot/session/event counts.
-
-## 8. UEFI manual validation
-
-Build and boot the ISO or USB image:
-
-```bash
-make iso
-```
-
-Inside VitaOS UEFI, run:
+En consola VitaOS UEFI ejecutar:
 
 ```text
 storage repair
 storage check
-journal status
-journal summary
+selftest
 audit readiness
 audit verify
 audit export
 audit events
 diagnostic
 export index
-selftest
-helpme
-hw
-status
+journal summary
 shutdown
 ```
 
-Expected UEFI behavior:
+Esperado:
+- consola local usable;
+- storage mínimo `/vita` preparado;
+- export/reportes locales escritos cuando FAT está disponible;
+- UEFI mantiene diagnóstico restringido hasta persistencia de auditoría real.
 
-- local text console remains usable;
-- storage repair/check reports the prepared `/vita/` tree state;
-- journal and export files are written when FAT storage is available;
-- audit readiness reports restricted diagnostic mode until UEFI persistent SQLite exists;
-- audit verify/export/events honestly report unavailable/restricted status instead of claiming full SQLite audit;
-- diagnostic and self-test reports are produced when storage is writable.
+## 6) Criterio de aceptación
 
-## 9. Framebuffer console validation
-
-Inside UEFI, generate long output:
-
-```text
-helpme
-hw
-journal show
-export index
-diagnostic
-selftest
-```
-
-Then test:
-
-```text
-PageUp
-PageDown
-mouse wheel up/down if firmware exposes wheel-compatible Z movement
-clear
-```
-
-Expected:
-
-- PageUp/PageDown scrollback works;
-- wheel scroll works only when firmware exposes compatible pointer Z movement;
-- if wheel is unavailable, keyboard scrollback remains usable;
-- no GUI/window manager behavior is introduced.
-
-## 10. Acceptance criteria
-
-The current F1A/F1B base is considered valid when:
-
-- `make clean && make hosted && make smoke-audit && make && make smoke && make iso` passes;
-- hosted mode reports SQLite audit ready;
-- UEFI mode does not claim full operational audit without persistent backend;
-- `/vita/` storage tree can be checked/repaired;
-- journal writes visible text/JSONL logs;
-- audit verification and exports work in hosted;
-- UEFI audit verification/export reports honest restricted status;
-- diagnostic bundle and self-test reports are generated;
-- export manifest indexes known report paths;
-- no Python runtime/build dependency is introduced;
-- no malloc is introduced in freestanding/UEFI patch paths;
-- no GUI/window manager or real network/Wi-Fi expansion is introduced.
-
-## 11. Known boundaries before the next phase
-
-Still not included in F1A/F1B base closure:
-
-- UEFI SQLite persistence;
-- full VFS;
-- full historical multi-boot audit export;
-- audit row repair;
-- compression/encryption of exports;
-- remote upload;
-- GUI/window manager;
-- real Wi-Fi/network expansion.
-
-## 12. Next phase entry condition
-
-Only start the UEFI persistent audit backend phase after this checklist passes on the current tree.
+Se acepta F1A/F1B cuando:
+- no hay `.py` en el árbol del repo (excluyendo `.git`/`build`);
+- no hay dependencia Python en build/smoke obligatorios;
+- `make clean && make hosted && make smoke-audit && make && make smoke && make iso` pasa;
+- hosted valida SQLite/audit;
+- UEFI no afirma auditoría persistente completa sin backend real.
