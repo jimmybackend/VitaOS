@@ -79,21 +79,44 @@ while IFS= read -r line; do
   [[ "$line" == *'"event_type"'* ]] || { echo "jsonl line missing event_type" >&2; exit 1; }
   [[ "$line" == *'"seq"'* ]] || { echo "jsonl line missing seq" >&2; exit 1; }
 done < build/storage/vita/audit/sessions/session-000001.jsonl
-grep -q "session_end" build/storage/vita/audit/sessions/session-000001.jsonl || grep -q "transcript_truncated" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "transcript missing session_end/truncated marker" >&2; exit 1; }
+cat build/storage/vita/audit/sessions/session-000001*.jsonl | grep -q '"event_type":"session_end"' || cat build/storage/vita/audit/sessions/session-000001*.jsonl | grep -q '"event_type":"transcript_truncated"' || { echo "transcript missing session_end/truncated marker" >&2; exit 1; }
 grep -q '"storage_state":"verified"' build/storage/vita/export/reports/diagnostic-bundle.jsonl || { echo "diagnostic jsonl did not keep verified storage state" >&2; exit 1; }
 
-cat <<'CMDS' | ./build/hosted/vitaos-hosted > build/test/validate-transcript-long.log 2>&1
-note long.txt
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-.save
-shutdown
-CMDS
-LONG_JSONL=build/storage/vita/audit/sessions/session-000002.jsonl
-[[ -f "$LONG_JSONL" ]] || { echo "missing long transcript jsonl" >&2; exit 1; }
-tail -n 1 "$LONG_JSONL" | grep -Eq '"event_type":"(session_end|transcript_truncated)"' || { echo "long transcript ended with invalid event" >&2; exit 1; }
+{
+  printf 'help\n'
+  i=0
+  while [[ $i -lt 260 ]]; do
+    printf 'storage status\njournal summary\n'
+    i=$((i+1))
+  done
+  printf 'shutdown\n'
+} | ./build/hosted/vitaos-hosted > build/test/validate-transcript-long.log 2>&1
+LONG_BASE=build/storage/vita/audit/sessions/session-000002.jsonl
+LONG_PART2=build/storage/vita/audit/sessions/session-000002.part-0002.jsonl
+[[ -f "$LONG_BASE" ]] || { echo "missing long transcript base jsonl" >&2; exit 1; }
+[[ -f "$LONG_PART2" ]] || { echo "missing long transcript part-0002 jsonl" >&2; exit 1; }
+while IFS= read -r jf; do
+  while IFS= read -r line; do
+    [[ "$line" == \{* ]] || { echo "jsonl line does not start with { in $jf" >&2; exit 1; }
+    [[ "$line" == *\} ]] || { echo "jsonl line does not end with } in $jf" >&2; exit 1; }
+    [[ "$line" == *'"event_type"'* ]] || { echo "jsonl line missing event_type in $jf" >&2; exit 1; }
+    [[ "$line" == *'"seq"'* ]] || { echo "jsonl line missing seq in $jf" >&2; exit 1; }
+  done < "$jf"
+done < <(find build/storage/vita/audit/sessions -maxdepth 1 -type f \( -name 'session-*.jsonl' -o -name 'session-*.part-*.jsonl' \) | sort)
+cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q 'Estado de almacenamiento / Storage status:' || { echo "missing storage status output after rotation" >&2; exit 1; }
+cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q 'Resumen del journal / Journal summary:' || { echo "missing journal summary output after rotation" >&2; exit 1; }
+cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"session_end"' || { echo "missing session_end in rotated jsonl parts" >&2; exit 1; }
+cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_rotated"' || { echo "missing transcript_rotated event" >&2; exit 1; }
+cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_part_start"' || { echo "missing transcript_part_start event" >&2; exit 1; }
+! cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_truncated"' || { echo "unexpected transcript_truncated after successful rotation" >&2; exit 1; }
 if find build/storage/vita/export/reports -type f \( -name '*.txt' -o -name '*.jsonl' \) \
   -exec grep -n $'\033\\[' {} + >/dev/null; then
   echo "ansi escape codes found in export reports" >&2
+  exit 1
+fi
+if find build/storage/vita/audit/sessions -maxdepth 1 -type f \( -name 'session-*.txt' -o -name 'session-*.jsonl' -o -name 'session-*.part-*.jsonl' \) \
+  -exec grep -n $'\033\\[' {} + >/dev/null; then
+  echo "ansi escape codes found in session artifacts" >&2
   exit 1
 fi
 

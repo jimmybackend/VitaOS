@@ -26,6 +26,7 @@ typedef struct {
     char session_id[64];
     char txt_path[VITA_STORAGE_PATH_MAX];
     char jsonl_path[VITA_STORAGE_PATH_MAX];
+    char jsonl_primary_path[VITA_STORAGE_PATH_MAX];
     char txt[65536];
     char jsonl[65536];
     char state[32];
@@ -33,6 +34,8 @@ typedef struct {
     vita_session_identity_t identity;
     unsigned long txt_len;
     unsigned long jsonl_len;
+    unsigned int current_jsonl_part;
+    unsigned int jsonl_rotation_count;
     bool truncated_reported;
     bool jsonl_locked;
 } st_t;
@@ -98,6 +101,25 @@ static void u64_to_dec(uint64_t value, char out[32]) {
     while (i > 0) out[j++] = tmp[--i];
     out[j] = 0;
 }
+static void u4(unsigned int v, char o[5]) {
+    o[0] = '0' + (v / 1000) % 10;
+    o[1] = '0' + (v / 100) % 10;
+    o[2] = '0' + (v / 10) % 10;
+    o[3] = '0' + v % 10;
+    o[4] = 0;
+}
+static void build_jsonl_part_path(const char *session_id, unsigned int part_number, char *out, unsigned long cap) {
+    char pn[5];
+    cp(out, cap, "/vita/audit/sessions/");
+    apc(out, cap, session_id);
+    if (part_number <= 1U) apc(out, cap, ".jsonl");
+    else {
+        u4(part_number, pn);
+        apc(out, cap, ".part-");
+        apc(out, cap, pn);
+        apc(out, cap, ".jsonl");
+    }
+}
 
 static void mark_transcript_error_once(const char *reason) {
     if (g.error_reported) return;
@@ -143,6 +165,60 @@ static bool flushv(void) {
     return storage_read_text(g.txt_path, a, sizeof(a)) &&
            storage_read_text(g.jsonl_path, b, sizeof(b)) &&
            eq(a, g.txt) && eq(b, g.jsonl);
+}
+static bool append_jsonl_line(const char *jsonl_line) {
+    if (g.jsonl_locked) return false;
+    return append_within_cap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, jsonl_line);
+}
+static bool append_control_jsonl_event(const char *etype, const char *text) {
+    char seq[7], jsonl_line[512];
+    unsigned long m = 0;
+    g.seq++;
+    u6(g.seq, seq);
+    cp(jsonl_line, sizeof(jsonl_line), "{\"session_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.session_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"boot_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.boot_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"node_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.node_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"host_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.host_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"firmware\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.firmware);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"arch\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.arch);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"boot_mode\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.boot_mode);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"cpu_model\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.cpu_model);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"ram_bytes\":");
+    { char ram[32]; u64_to_dec(g.identity.ram_bytes, ram); apc(jsonl_line, sizeof(jsonl_line), ram); }
+    apc(jsonl_line, sizeof(jsonl_line), ",\"storage_backend\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.storage_backend);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"storage_state\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.storage_state);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"event_type\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), etype);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"actor\":\"system\",\"text\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), text ? text : "");
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"seq\":");
+    while (seq[m] == '0' && seq[m + 1]) m++;
+    apc(jsonl_line, sizeof(jsonl_line), seq + m);
+    apc(jsonl_line, sizeof(jsonl_line), "}\n");
+    return append_jsonl_line(jsonl_line);
+}
+static bool rotate_jsonl_part(void) {
+    char msg[96];
+    if (!flushv()) return false;
+    g.current_jsonl_part++;
+    g.jsonl_rotation_count++;
+    g.jsonl_len = 0;
+    g.jsonl[0] = 0;
+    build_jsonl_part_path(g.session_id, g.current_jsonl_part, g.jsonl_path, sizeof(g.jsonl_path));
+    if (!append_control_jsonl_event("transcript_rotated", "jsonl part rotated")) return false;
+    cp(msg, sizeof(msg), "part=");
+    { char pn[5]; u4(g.current_jsonl_part, pn); apc(msg, sizeof(msg), pn); }
+    return append_control_jsonl_event("transcript_part_start", msg);
 }
 /*
  * Critical transcript safety notes:
@@ -199,9 +275,12 @@ static void event(const char *t, const char *a, const char *x) {
     apc(jsonl_line, sizeof(jsonl_line), a);
     apc(jsonl_line, sizeof(jsonl_line), "\",\"text\":\"");
     if (x) {
-        while (x[n] && g.jsonl_len + 1 < sizeof(g.jsonl)) {
+        while (x[n] && n < 180U) {
             char c = x[n++];
             if (c == '"') apc(jsonl_line, sizeof(jsonl_line), "\\\"");
+            else if (c == '\\') apc(jsonl_line, sizeof(jsonl_line), "\\\\");
+            else if (c == '\n') apc(jsonl_line, sizeof(jsonl_line), "\\n");
+            else if (c == '\r') apc(jsonl_line, sizeof(jsonl_line), "\\r");
             else { char one[2] = {c, 0}; apc(jsonl_line, sizeof(jsonl_line), one); }
         }
     }
@@ -209,8 +288,8 @@ static void event(const char *t, const char *a, const char *x) {
     while (seq[m] == '0' && seq[m + 1]) m++;
     apc(jsonl_line, sizeof(jsonl_line), seq + m);
     apc(jsonl_line, sizeof(jsonl_line), "}\n");
-    if (!g.jsonl_locked) {
-        if (!append_within_cap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, jsonl_line)) {
+    if (!g.jsonl_locked && !append_jsonl_line(jsonl_line)) {
+        if (!rotate_jsonl_part() || !append_jsonl_line(jsonl_line)) {
             report_transcript_truncated_once();
         }
     }
@@ -228,6 +307,7 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
     cp(g.session_id, sizeof(g.session_id), "");
     cp(g.txt_path, sizeof(g.txt_path), "");
     cp(g.jsonl_path, sizeof(g.jsonl_path), "");
+    cp(g.jsonl_primary_path, sizeof(g.jsonl_primary_path), "");
     cp(g.txt, sizeof(g.txt), "");
     cp(g.jsonl, sizeof(g.jsonl), "");
     cp(g.state, sizeof(g.state), "");
@@ -241,6 +321,8 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
     g.seq = 0;
     g.txt_len = 0;
     g.jsonl_len = 0;
+    g.current_jsonl_part = 1;
+    g.jsonl_rotation_count = 0;
     g.initialized = true;
     cp(g.state, sizeof(g.state), "degraded");
     cp(g.identity.arch, sizeof(g.identity.arch), arch && arch[0] ? arch : "unknown");
@@ -289,9 +371,8 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
     cp(g.txt_path, sizeof(g.txt_path), "/vita/audit/sessions/");
     apc(g.txt_path, sizeof(g.txt_path), g.session_id);
     apc(g.txt_path, sizeof(g.txt_path), ".txt");
-    cp(g.jsonl_path, sizeof(g.jsonl_path), "/vita/audit/sessions/");
-    apc(g.jsonl_path, sizeof(g.jsonl_path), g.session_id);
-    apc(g.jsonl_path, sizeof(g.jsonl_path), ".jsonl");
+    build_jsonl_part_path(g.session_id, 1, g.jsonl_path, sizeof(g.jsonl_path));
+    cp(g.jsonl_primary_path, sizeof(g.jsonl_primary_path), g.jsonl_path);
     ap(g.txt, sizeof(g.txt), &g.txt_len, "=== VitaOS session transcript ===\nsession_id: ");
     ap(g.txt, sizeof(g.txt), &g.txt_len, g.session_id);
     ap(g.txt, sizeof(g.txt), &g.txt_len, "\n\nDatos de esta sesion:\nsession_id: ");
@@ -393,6 +474,6 @@ const char *session_transcript_txt_path(void) {
     return g.txt_path[0] ? g.txt_path : "unknown";
 }
 const char *session_transcript_jsonl_path(void) {
-    return g.jsonl_path[0] ? g.jsonl_path : "unknown";
+    return g.jsonl_primary_path[0] ? g.jsonl_primary_path : (g.jsonl_path[0] ? g.jsonl_path : "unknown");
 }
 const char *session_transcript_state(void) { return g.state; }
