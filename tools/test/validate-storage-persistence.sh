@@ -104,6 +104,16 @@ grep -q "journal: inactive" "$LOG_FAILURE" || { echo "failure log missing journa
 grep -qi "failed" "$LOG_FAILURE" || { echo "failure log missing generic failed marker" >&2; exit 1; }
 grep -qi "storage last error\|storage_last_error\|last-error\|error" "$LOG_FAILURE" || { echo "failure log missing storage error cause" >&2; exit 1; }
 
+# Guard against transcript_error audit spam during persistent storage failure loops.
+JOURNAL_JSONL=build/storage/vita/audit/session-journal.jsonl
+if [[ -f "$JOURNAL_JSONL" ]]; then
+  transcript_error_count=$(grep -c '"event_type":"transcript_error"' "$JOURNAL_JSONL" || true)
+  [[ "$transcript_error_count" -le 1 ]] || {
+    echo "transcript_error repeated unexpectedly ($transcript_error_count)" >&2
+    exit 1
+  }
+fi
+
 rm -f build/storage
 mkdir -p build/storage
 
