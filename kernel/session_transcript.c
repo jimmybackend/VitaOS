@@ -2,17 +2,221 @@
 #include <vita/storage.h>
 #include <vita/session_journal.h>
 
-typedef struct{bool initialized,active,busy;unsigned int seq;char session_id[64],txt_path[VITA_STORAGE_PATH_MAX],jsonl_path[VITA_STORAGE_PATH_MAX],txt[8192],jsonl[8192],state[32],last_text[160],arch[32],firmware[16];unsigned long txt_len,jsonl_len;} st_t; static st_t g;
-static unsigned long sl(const char*s){unsigned long n=0;while(s&&s[n])n++;return n;} static void cp(char*d,unsigned long c,const char*s){unsigned long i=0;if(!d||!c)return; if(!s){d[0]=0;return;} while(s[i]&&i+1<c){d[i]=s[i];i++;} d[i]=0;} static bool eq(const char*a,const char*b){unsigned long i=0; if(!a||!b)return false; while(a[i]&&b[i]){if(a[i]!=b[i])return false;i++;} return a[i]==b[i];}
-static void ap(char*d,unsigned long c,unsigned long*len,const char*s){unsigned long i=0;if(!d||!len||!s)return; while(s[i]&&*len+1<c){d[*len]=s[i++];(*len)++;} d[*len]=0;} static void apc(char*d,unsigned long c,const char*s){unsigned long l=sl(d);ap(d,c,&l,s);} static void u6(unsigned int v,char o[7]){o[0]='0'+(v/100000)%10;o[1]='0'+(v/10000)%10;o[2]='0'+(v/1000)%10;o[3]='0'+(v/100)%10;o[4]='0'+(v/10)%10;o[5]='0'+v%10;o[6]=0;}
-static bool flushv(void){static char a[VITA_STORAGE_READ_MAX],b[VITA_STORAGE_READ_MAX]; if(!storage_write_text(g.txt_path,g.txt)||!storage_write_text(g.jsonl_path,g.jsonl)) return false; if(g.txt_len >= (VITA_STORAGE_READ_MAX-1U) || g.jsonl_len >= (VITA_STORAGE_READ_MAX-1U)) return true; return storage_read_text(g.txt_path,a,sizeof(a))&&storage_read_text(g.jsonl_path,b,sizeof(b))&&eq(a,g.txt)&&eq(b,g.jsonl);} 
-static void event(const char*t,const char*a,const char*x){char seq[7],line[256]; unsigned long n=0,m=0; if(!g.active||g.busy)return; g.busy=true; g.seq++; u6(g.seq,seq); cp(line,sizeof(line),"[");apc(line,sizeof(line),seq);apc(line,sizeof(line),"] ");apc(line,sizeof(line),t);apc(line,sizeof(line),": ");apc(line,sizeof(line),x?x:"");ap(g.txt,sizeof(g.txt),&g.txt_len,line);ap(g.txt,sizeof(g.txt),&g.txt_len,"\n");
- ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"{\"session_id\":\"");ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,g.session_id);ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"firmware\":\"");ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,g.firmware);ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"\",\"arch\":\"");ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,g.arch);ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"\",\"event_type\":\"");ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,t);ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"\",\"actor\":\"");ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,a);ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"\",\"text\":\"");
- if(x){while(x[n]&&g.jsonl_len+1<sizeof(g.jsonl)){char c=x[n++]; if(c=='"') ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"\\\""); else {char one[2]={c,0}; ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,one);} }}
- ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"\",\"seq\":"); while(seq[m]=='0'&&seq[m+1])m++; ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,seq+m); ap(g.jsonl,sizeof(g.jsonl),&g.jsonl_len,"}\n");
- if(!flushv()){g.active=false;cp(g.state,sizeof(g.state),"error");session_journal_log_system("transcript_error","write_read_compare_failed");}
- g.busy=false;}
+typedef struct {
+    bool initialized;
+    bool active;
+    bool busy;
+    bool error_reported;
+    unsigned int seq;
+    char session_id[64];
+    char txt_path[VITA_STORAGE_PATH_MAX];
+    char jsonl_path[VITA_STORAGE_PATH_MAX];
+    char txt[8192];
+    char jsonl[8192];
+    char state[32];
+    char last_text[160];
+    char arch[32];
+    char firmware[16];
+    unsigned long txt_len;
+    unsigned long jsonl_len;
+} st_t;
 
-bool session_transcript_init(const vita_handoff_t *h,const char *arch){unsigned int i;char p[VITA_STORAGE_PATH_MAX],num[7],scratch[8]; cp(g.session_id,sizeof(g.session_id),"");cp(g.txt_path,sizeof(g.txt_path),"");cp(g.jsonl_path,sizeof(g.jsonl_path),"");cp(g.txt,sizeof(g.txt),"");cp(g.jsonl,sizeof(g.jsonl),"");cp(g.state,sizeof(g.state),"");cp(g.last_text,sizeof(g.last_text),"");g.initialized=false;g.active=false;g.busy=false;g.seq=0;g.txt_len=0;g.jsonl_len=0; g.initialized=true; cp(g.state,sizeof(g.state),"degraded"); cp(g.arch,sizeof(g.arch),arch&&arch[0]?arch:"unknown"); cp(g.firmware,sizeof(g.firmware),h&&h->firmware_type==VITA_FIRMWARE_HOSTED?"hosted":(h&&h->firmware_type==VITA_FIRMWARE_UEFI?"uefi":"unknown")); if(!storage_is_bootstrap_verified()){session_journal_log_system("transcript_error","storage_not_verified");return false;} for(i=1;i<999999;i++){u6(i,num);cp(p,sizeof(p),"/vita/audit/sessions/session-");apc(p,sizeof(p),num);apc(p,sizeof(p),".txt"); if(!storage_read_text(p,scratch,sizeof(scratch))){cp(g.session_id,sizeof(g.session_id),"session-");apc(g.session_id,sizeof(g.session_id),num);break;}} if(!g.session_id[0])cp(g.session_id,sizeof(g.session_id),"session-boot-unknown"); cp(g.txt_path,sizeof(g.txt_path),"/vita/audit/sessions/");apc(g.txt_path,sizeof(g.txt_path),g.session_id);apc(g.txt_path,sizeof(g.txt_path),".txt"); cp(g.jsonl_path,sizeof(g.jsonl_path),"/vita/audit/sessions/");apc(g.jsonl_path,sizeof(g.jsonl_path),g.session_id);apc(g.jsonl_path,sizeof(g.jsonl_path),".jsonl"); ap(g.txt,sizeof(g.txt),&g.txt_len,"=== VitaOS session transcript ===\nsession_id: ");ap(g.txt,sizeof(g.txt),&g.txt_len,g.session_id);ap(g.txt,sizeof(g.txt),&g.txt_len,"\nboot_id: unknown\nnode_id: unknown\narch: ");ap(g.txt,sizeof(g.txt),&g.txt_len,g.arch);ap(g.txt,sizeof(g.txt),&g.txt_len,"\nfirmware: ");ap(g.txt,sizeof(g.txt),&g.txt_len,g.firmware);ap(g.txt,sizeof(g.txt),&g.txt_len,"\n\n"); g.active=true; cp(g.state,sizeof(g.state),"active"); event("session_start","system","transcript started"); return g.active;}
-void session_transcript_shutdown(void){if(g.active)event("session_end","system","session closed");}
-bool session_transcript_is_active(void){return g.initialized&&g.active;} void session_transcript_log_user_input(const char *t){event("user_input","user",t?t:"");} void session_transcript_log_command_executed(const char *t){event("command_executed","user",t?t:"");} void session_transcript_log_editor_event(const char *e,const char *t){event(e?e:"editor_event","editor",t?t:"");} void session_transcript_log_storage_status(const char *t){event("storage_status","system",t?t:"");} void session_transcript_log_journal_status(const char *t){event("journal_status","system",t?t:"");} void session_transcript_log_system_output(const char *t,bool raw){if(!t||!t[0])return; if(raw&&eq(g.last_text,t))return; cp(g.last_text,sizeof(g.last_text),t); event("system_output","system",t);} const char *session_transcript_txt_path(void){return g.txt_path[0]?g.txt_path:"unknown";} const char *session_transcript_jsonl_path(void){return g.jsonl_path[0]?g.jsonl_path:"unknown";} const char *session_transcript_state(void){return g.state;}
+static st_t g;
+
+static unsigned long sl(const char *s) {
+    unsigned long n = 0;
+    while (s && s[n]) n++;
+    return n;
+}
+static void cp(char *d, unsigned long c, const char *s) {
+    unsigned long i = 0;
+    if (!d || !c) return;
+    if (!s) { d[0] = 0; return; }
+    while (s[i] && i + 1 < c) { d[i] = s[i]; i++; }
+    d[i] = 0;
+}
+static bool eq(const char *a, const char *b) {
+    unsigned long i = 0;
+    if (!a || !b) return false;
+    while (a[i] && b[i]) { if (a[i] != b[i]) return false; i++; }
+    return a[i] == b[i];
+}
+static void ap(char *d, unsigned long c, unsigned long *len, const char *s) {
+    unsigned long i = 0;
+    if (!d || !len || !s) return;
+    while (s[i] && *len + 1 < c) { d[*len] = s[i++]; (*len)++; }
+    d[*len] = 0;
+}
+static void apc(char *d, unsigned long c, const char *s) {
+    unsigned long l = sl(d);
+    ap(d, c, &l, s);
+}
+static void u6(unsigned int v, char o[7]) {
+    o[0] = '0' + (v / 100000) % 10;
+    o[1] = '0' + (v / 10000) % 10;
+    o[2] = '0' + (v / 1000) % 10;
+    o[3] = '0' + (v / 100) % 10;
+    o[4] = '0' + (v / 10) % 10;
+    o[5] = '0' + v % 10;
+    o[6] = 0;
+}
+
+static void mark_transcript_error_once(const char *reason) {
+    if (g.error_reported) return;
+    g.error_reported = true;
+    session_journal_log_system("transcript_error", reason);
+}
+static bool flushv(void) {
+    static char a[VITA_STORAGE_READ_MAX], b[VITA_STORAGE_READ_MAX];
+    if (!storage_write_text(g.txt_path, g.txt) || !storage_write_text(g.jsonl_path, g.jsonl))
+        return false;
+    if (g.txt_len >= (VITA_STORAGE_READ_MAX - 1U) || g.jsonl_len >= (VITA_STORAGE_READ_MAX - 1U))
+        return true;
+    return storage_read_text(g.txt_path, a, sizeof(a)) &&
+           storage_read_text(g.jsonl_path, b, sizeof(b)) &&
+           eq(a, g.txt) && eq(b, g.jsonl);
+}
+/*
+ * Critical transcript safety notes:
+ * - Never call console_write_line()/console_write_raw() from transcript code.
+ *   Doing so can create recursive logging loops through system output paths.
+ * - g.busy is a hard reentry guard that blocks recursion while an event is being appended/flushed.
+ * - error_reported suppresses repeated transcript_error audit spam after the first hard failure.
+ * - If write/read/compare persistence verification fails, transcript enters error/inactive state.
+ */
+static void event(const char *t, const char *a, const char *x) {
+    char seq[7], line[256];
+    unsigned long n = 0, m = 0;
+    if (!g.active || g.busy) return;
+    g.busy = true;
+    g.seq++;
+    u6(g.seq, seq);
+    cp(line, sizeof(line), "[");
+    apc(line, sizeof(line), seq);
+    apc(line, sizeof(line), "] ");
+    apc(line, sizeof(line), t);
+    apc(line, sizeof(line), ": ");
+    apc(line, sizeof(line), x ? x : "");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, line);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\n");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "{\"session_id\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.session_id);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"firmware\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.firmware);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"arch\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.arch);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"event_type\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, t);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"actor\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, a);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"text\":\"");
+    if (x) {
+        while (x[n] && g.jsonl_len + 1 < sizeof(g.jsonl)) {
+            char c = x[n++];
+            if (c == '"') ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\\\"");
+            else { char one[2] = {c, 0}; ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, one); }
+        }
+    }
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"seq\":");
+    while (seq[m] == '0' && seq[m + 1]) m++;
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, seq + m);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "}\n");
+    if (!flushv()) {
+        g.active = false;
+        cp(g.state, sizeof(g.state), "error");
+        mark_transcript_error_once("write_read_compare_failed");
+    }
+    g.busy = false;
+}
+
+bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
+    unsigned int i;
+    char p[VITA_STORAGE_PATH_MAX], num[7], scratch[8];
+    cp(g.session_id, sizeof(g.session_id), "");
+    cp(g.txt_path, sizeof(g.txt_path), "");
+    cp(g.jsonl_path, sizeof(g.jsonl_path), "");
+    cp(g.txt, sizeof(g.txt), "");
+    cp(g.jsonl, sizeof(g.jsonl), "");
+    cp(g.state, sizeof(g.state), "");
+    cp(g.last_text, sizeof(g.last_text), "");
+    g.initialized = false;
+    g.active = false;
+    g.busy = false;
+    g.error_reported = false;
+    g.seq = 0;
+    g.txt_len = 0;
+    g.jsonl_len = 0;
+    g.initialized = true;
+    cp(g.state, sizeof(g.state), "degraded");
+    cp(g.arch, sizeof(g.arch), arch && arch[0] ? arch : "unknown");
+    cp(g.firmware, sizeof(g.firmware), h && h->firmware_type == VITA_FIRMWARE_HOSTED ? "hosted" : (h && h->firmware_type == VITA_FIRMWARE_UEFI ? "uefi" : "unknown"));
+    if (!storage_is_bootstrap_verified()) {
+        mark_transcript_error_once("storage_not_verified");
+        return false;
+    }
+    for (i = 1; i < 999999; i++) {
+        u6(i, num);
+        cp(p, sizeof(p), "/vita/audit/sessions/session-");
+        apc(p, sizeof(p), num);
+        apc(p, sizeof(p), ".txt");
+        if (!storage_read_text(p, scratch, sizeof(scratch))) {
+            cp(g.session_id, sizeof(g.session_id), "session-");
+            apc(g.session_id, sizeof(g.session_id), num);
+            break;
+        }
+    }
+    if (!g.session_id[0]) cp(g.session_id, sizeof(g.session_id), "session-boot-unknown");
+    cp(g.txt_path, sizeof(g.txt_path), "/vita/audit/sessions/");
+    apc(g.txt_path, sizeof(g.txt_path), g.session_id);
+    apc(g.txt_path, sizeof(g.txt_path), ".txt");
+    cp(g.jsonl_path, sizeof(g.jsonl_path), "/vita/audit/sessions/");
+    apc(g.jsonl_path, sizeof(g.jsonl_path), g.session_id);
+    apc(g.jsonl_path, sizeof(g.jsonl_path), ".jsonl");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "=== VitaOS session transcript ===\nsession_id: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.session_id);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nboot_id: unknown\nnode_id: unknown\narch: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.arch);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nfirmware: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.firmware);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\n\n");
+    g.active = true;
+    cp(g.state, sizeof(g.state), "active");
+    event("session_start", "system", "transcript started");
+    return g.active;
+}
+void session_transcript_shutdown(void) {
+    if (g.active) event("session_end", "system", "session closed");
+}
+bool session_transcript_is_active(void) {
+    return g.initialized && g.active;
+}
+void session_transcript_log_user_input(const char *t) {
+    event("user_input", "user", t ? t : "");
+}
+void session_transcript_log_command_executed(const char *t) {
+    event("command_executed", "user", t ? t : "");
+}
+void session_transcript_log_editor_event(const char *e, const char *t) {
+    event(e ? e : "editor_event", "editor", t ? t : "");
+}
+void session_transcript_log_storage_status(const char *t) {
+    event("storage_status", "system", t ? t : "");
+}
+void session_transcript_log_journal_status(const char *t) {
+    event("journal_status", "system", t ? t : "");
+}
+void session_transcript_log_system_output(const char *t, bool raw) {
+    if (!t || !t[0]) return;
+    if (raw && eq(g.last_text, t)) return;
+    cp(g.last_text, sizeof(g.last_text), t);
+    event("system_output", "system", t);
+}
+const char *session_transcript_txt_path(void) {
+    return g.txt_path[0] ? g.txt_path : "unknown";
+}
+const char *session_transcript_jsonl_path(void) {
+    return g.jsonl_path[0] ? g.jsonl_path : "unknown";
+}
+const char *session_transcript_state(void) {
+    return g.state;
+}
