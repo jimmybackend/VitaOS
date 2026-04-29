@@ -34,7 +34,8 @@ typedef enum {
     VITA_CONSOLE_STYLE_ES,
     VITA_CONSOLE_STYLE_ERROR,
     VITA_CONSOLE_STYLE_OK,
-    VITA_CONSOLE_STYLE_WARNING
+    VITA_CONSOLE_STYLE_WARNING,
+    VITA_CONSOLE_STYLE_EDITOR_TEXT
 } vita_console_style_t;
 
 typedef struct {
@@ -65,6 +66,7 @@ void console_write_es(const char *text);
 void console_write_error(const char *text);
 void console_write_ok(const char *text);
 void console_write_warning(const char *text);
+void console_write_editor_text(const char *text);
 bool console_read_line(char *out, unsigned long out_cap);
 void console_clear_screen(void);
 

@@ -29,6 +29,10 @@ grep -q "linea normal desde validador" "$NOTE_FILE" || { echo "editor note missi
 ! grep -q '^\.exit$' "$NOTE_FILE" || { echo "editor note incorrectly contains .exit" >&2; exit 1; }
 ! grep -q '^\.wq$' "$NOTE_FILE" || { echo "editor note incorrectly contains .wq" >&2; exit 1; }
 ! grep -q '^\.quit$' "$NOTE_FILE" || { echo "editor note incorrectly contains .quit" >&2; exit 1; }
+! grep -q 'VitaOS Editor' "$NOTE_FILE" || { echo "editor note incorrectly contains editor frame title" >&2; exit 1; }
+! grep -q 'Comandos:' "$NOTE_FILE" || { echo "editor note incorrectly contains command bar" >&2; exit 1; }
+! grep -q 'Archivo:' "$NOTE_FILE" || { echo "editor note incorrectly contains file label" >&2; exit 1; }
+! grep -q '+----' "$NOTE_FILE" || { echo "editor note incorrectly contains frame border" >&2; exit 1; }
 
 [[ -d "$SESSIONS_DIR" ]] || { echo "missing sessions directory: $SESSIONS_DIR" >&2; exit 1; }
 
