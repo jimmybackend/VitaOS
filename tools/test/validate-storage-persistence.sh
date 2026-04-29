@@ -32,6 +32,11 @@ selftest
 shutdown
 CMDS
 
+printf 'storage sta\t\njournal sum\t\nexport j\t\nshutdown\n' | ./build/hosted/vitaos-hosted > build/test/validate-tab-autocomplete.log 2>&1
+grep -q "Storage / Almacenamiento:" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for storage status" >&2; exit 1; }
+grep -q "journal summary:" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for journal summary" >&2; exit 1; }
+grep -q "export jsonl: written" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for export jsonl" >&2; exit 1; }
+
 required_files=(
   build/storage/vita/tmp/boot-storage-verify.txt
   build/storage/vita/audit/session-journal.txt
