@@ -186,6 +186,61 @@ static void json_end(jsonl_builder_t *jb) {
     jb_putc(jb, '\n');
 }
 
+static bool path_has_jsonl_suffix(const char *path) {
+    unsigned long len = 0;
+    if (!path) return false;
+    while (path[len]) len++;
+    if (len < 6U) return false;
+    return path[len - 6] == '.' && path[len - 5] == 'j' && path[len - 4] == 's' &&
+           path[len - 3] == 'o' && path[len - 2] == 'n' && path[len - 1] == 'l';
+}
+
+static void build_jsonl_part_path(const char *base_path, unsigned int part_number, char *out, unsigned long cap) {
+    unsigned long i = 0;
+    unsigned long stem_len = 0;
+    if (!out || cap == 0 || !base_path || !path_has_jsonl_suffix(base_path)) {
+        if (out && cap > 0) out[0] = '\0';
+        return;
+    }
+    while (base_path[stem_len]) stem_len++;
+    stem_len -= 6U;
+    while (i < stem_len && i + 1 < cap) {
+        out[i] = base_path[i];
+        i++;
+    }
+    if (part_number <= 1U) {
+        out[i++] = '.';
+        out[i++] = 'j';
+        out[i++] = 's';
+        out[i++] = 'o';
+        out[i++] = 'n';
+        out[i++] = 'l';
+        out[i] = '\0';
+        return;
+    }
+    if (i + 17U >= cap) {
+        out[0] = '\0';
+        return;
+    }
+    out[i++] = '.';
+    out[i++] = 'p';
+    out[i++] = 'a';
+    out[i++] = 'r';
+    out[i++] = 't';
+    out[i++] = '-';
+    out[i++] = (char)('0' + ((part_number / 1000U) % 10U));
+    out[i++] = (char)('0' + ((part_number / 100U) % 10U));
+    out[i++] = (char)('0' + ((part_number / 10U) % 10U));
+    out[i++] = (char)('0' + (part_number % 10U));
+    out[i++] = '.';
+    out[i++] = 'j';
+    out[i++] = 's';
+    out[i++] = 'o';
+    out[i++] = 'n';
+    out[i++] = 'l';
+    out[i] = '\0';
+}
+
 static bool text_exact_match(const char *a, const char *b) {
     unsigned long i = 0;
 
@@ -306,6 +361,12 @@ static void append_ai_line(jsonl_builder_t *jb) {
 }
 
 static void append_paths_line(jsonl_builder_t *jb) {
+    const char *base_jsonl = session_transcript_jsonl_path();
+    unsigned int part_count = 0;
+    unsigned int part = 2;
+    char part_path[VITA_STORAGE_PATH_MAX];
+    char readback[VITA_STORAGE_READ_MAX];
+
     json_begin(jb, "paths");
     json_prop_str(jb, "notes", "/vita/notes/");
     json_prop_str(jb, "messages", "/vita/messages/");
@@ -313,7 +374,33 @@ static void append_paths_line(jsonl_builder_t *jb) {
     json_prop_str(jb, "exports", "/vita/export/");
     json_prop_str(jb, "jsonl_report", SESSION_JSONL_EXPORT_PATH);
     json_prop_str(jb, "transcript_txt_path", session_transcript_txt_path());
-    json_prop_str(jb, "transcript_jsonl_path", session_transcript_jsonl_path());
+    json_prop_str(jb, "transcript_jsonl_path", base_jsonl);
+    if (path_has_jsonl_suffix(base_jsonl)) {
+        part_count = 1U;
+        while (part <= 8U) {
+            build_jsonl_part_path(base_jsonl, part, part_path, sizeof(part_path));
+            if (!part_path[0] || !storage_read_text(part_path, readback, sizeof(readback))) {
+                break;
+            }
+            part_count = part;
+            part++;
+        }
+    }
+    if (part_count > 1U) {
+        json_prop_u64(jb, "transcript_jsonl_part_count", part_count);
+        json_prop_name(jb, "transcript_jsonl_parts");
+        jb_putc(jb, '[');
+        part = 1;
+        while (part <= part_count) {
+            build_jsonl_part_path(base_jsonl, part, part_path, sizeof(part_path));
+            if (part > 1U) {
+                jb_putc(jb, ',');
+            }
+            jb_json_string(jb, part_path);
+            part++;
+        }
+        jb_putc(jb, ']');
+    }
     json_prop_str(jb, "transcript_state", session_transcript_state());
     json_end(jb);
 }
