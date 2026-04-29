@@ -1,307 +1,399 @@
 # VitaOS con IA
 
-VitaOS con IA es un sistema operativo desde cero, orientado a operación live/RAM, con una IA residente en el kernel, auditoría obligatoria en SQLite y nodos cooperativos para ayuda, coordinación y operación en escenarios de emergencia.
+VitaOS es un **sistema operativo desde cero** (from-scratch), orientado a operación **live/RAM**, con enfoque **audit-first** y **text-first**.
 
-## Estado del repositorio
+Está diseñado para uso en USB booteable y escenarios de emergencia donde importa más la trazabilidad, la honestidad operativa y la utilidad inmediata que el scope amplio.
 
-El repositorio ya contiene un slice ejecutable mínimo para el milestone actual, centrado en cerrar una base real de F1A/F1B sin agregar features fuera de alcance.
+> Estado de IA real: hoy VitaOS está preparado para integración de IA (gateway/stub/flujo local de emergencia), pero **no** debe afirmarse integración real con AWS Bedrock ni IA local completa en producción.
 
-### Slice hoy integrado
+> Estado de red real: hoy VitaOS **no** debe afirmarse como red/Wi‑Fi real completa en hardware UEFI.
 
-- build **UEFI x86_64**;
-- build **hosted** para validación rápida;
-- `kmain()` integrado con:
-  - validación de handoff;
-  - arranque temprano de consola;
-  - detección básica de hardware;
-  - auditoría persistente en SQLite en modo hosted;
-  - motor inicial de propuestas;
-  - consola guiada mínima;
-  - VitaNet hosted mínimo;
-  - peer discovery básico;
-  - replicación básica de bloque reciente de auditoría;
-- smoke tests para boot y auditoría.
+---
 
-## Alcance real del milestone actual
+## Estado actual validado
 
-### F1A base integrada
-- arranque x86_64 UEFI;
-- consola textual mínima;
-- detección básica de hardware;
-- estructura de auditoría persistente;
-- proposals visibles;
-- flujo guiado inicial.
+Estado real validado en el slice actual:
 
-### F1B mínimo real
-- VitaNet hosted mínimo operativo;
-- descubrimiento básico de peer;
-- persistencia de `node_peer`;
-- propuesta de vinculación inicial;
-- exportación básica de bloque reciente de auditoría;
-- base mínima para `node_task`.
+- Boot en **UEFI** y **hosted**.
+- Persistencia real en USB writable.
+- Creación automática del árbol `/vita` durante boot.
+- Verificación de storage con flujo **write -> read -> compare**.
+- Flujo con USB real creada con Rufus validado.
+- Editor seguro operativo.
+- Historial persistente por sesión operativo.
+- Reportes TXT/JSONL operativos.
+- Validadores automáticos operativos.
 
-## Regla central
+Notas operativas importantes:
 
-**Sin auditoría persistente válida, VitaOS no debe entrar en modo operativo completo.**
+- No se requiere `storage repair` manual para preparar `/vita`.
+- El boot puede tardar algunos segundos mientras detecta y verifica filesystem writable.
+- Se crean archivos reales sobre USB cuando el backend writable está disponible.
 
-Ese comportamiento se mantiene como regla del proyecto.
+---
 
-## Estado operativo real por modo
+## Modos de ejecución
 
-### EFI / UEFI
-Hoy el build EFI sirve para validar:
-- arranque;
-- consola temprana;
-- banner;
-- paso por `kmain()`.
+### Hosted (ruta principal de validación rápida)
 
-Actualmente el backend persistente completo de auditoría no está operativo en la ruta UEFI/freestanding, así que ese camino debe entenderse como **boot + diagnóstico restringido**, no como operación completa.
+- Usa filesystem local (`build/storage`) como backend de pruebas.
+- Puede usar SQLite hosted para auditoría donde aplica el flujo hosted.
+- El autocompletado puede listar notas reales desde `build/storage/vita/notes`.
+- Es la vía recomendada para iteración rápida y validadores automatizados.
 
-### Hosted
-El modo hosted es hoy la ruta principal para validar:
-- SQLite persistente;
-- `boot_session`;
-- `hardware_snapshot`;
-- `audit_event` con hash chain;
-- `ai_proposal`;
-- `human_response`;
-- `node_peer`;
-- VitaNet hosted mínimo;
-- smoke test ampliado.
+### UEFI (hardware/USB real)
 
-## Estructura principal
+- Arranca en hardware/USB.
+- Crea/verifica `/vita` en storage writable.
+- No debe prometer SQLite persistente UEFI completa todavía.
+- No debe prometer red/Wi‑Fi real completa todavía.
+- Debe usar fallback visual seguro si ANSI no es soportado.
+- Puede operar en modo diagnóstico restringido cuando no existe auditoría persistente completa.
+
+---
+
+## Árbol `/vita` persistente
+
+Estructura base esperada:
 
 ```text
-vitaos/
-├── README.md
-├── AGENTS.md
-├── docs/
-├── kernel/
-├── arch/
-├── drivers/
-├── proto/
-├── knowledge/
-├── schema/
-├── tools/
-└── tests/
+/vita/
+/vita/tmp/
+/vita/audit/
+/vita/audit/sessions/
+/vita/notes/
+/vita/export/
+/vita/export/reports/
 ```
 
-## Archivos clave del slice actual
+Propósito de cada carpeta:
 
-- `Makefile`
-- `arch/x86_64/boot/uefi_entry.c`
-- `arch/x86_64/boot/host_entry.c`
-- `kernel/kmain.c`
-- `kernel/console.c`
-- `kernel/hardware_discovery.c`
-- `kernel/proposal.c`
-- `kernel/node_core.c`
-- `kernel/audit_core.c`
-- `include/vita/console.h`
-- `include/vita/audit.h`
-- `include/vita/node.h`
-- `include/vita/proposal.h`
-- `schema/audit.sql`
-- `tools/test/smoke-boot.sh`
-- `tools/test/smoke-audit.sh`
+- `/vita/`: raíz persistente de VitaOS en storage writable.
+- `/vita/tmp/`: verificaciones temporales de boot/storage.
+- `/vita/audit/`: journal actual y artefactos de auditoría de sesión.
+- `/vita/audit/sessions/`: historial por sesión (sin sobreescribir sesiones previas).
+- `/vita/notes/`: notas del usuario y pruebas directas de persistencia.
+- `/vita/export/`: exportaciones de sesión/diagnóstico.
+- `/vita/export/reports/`: reportes legibles (TXT) y técnicos (JSONL).
 
-## Requisitos
+---
 
-### Para EFI / QEMU
-- `clang`
-- `lld`
-- `qemu-system-x86_64`
-- OVMF, por ejemplo:
-  - `/usr/share/OVMF/OVMF_CODE.fd`
-  - `/usr/share/OVMF/OVMF_VARS.fd`
-
-### Para hosted
-- `clang`
-- `sqlite3`
-- `libsqlite3`
-- `sha256sum` (coreutils)
-
-## Build
-
-### Build EFI
-
-```bash
-make
-```
-
-Salida esperada:
+## Archivos persistentes esperados
 
 ```text
-build/efi/EFI/BOOT/BOOTX64.EFI
+/vita/tmp/boot-storage-verify.txt
+/vita/audit/session-journal.txt
+/vita/audit/session-journal.jsonl
+/vita/audit/sessions/session-*.txt
+/vita/audit/sessions/session-*.jsonl
+/vita/notes/usb-test.txt
+/vita/export/reports/last-session.txt
+/vita/export/reports/last-session.jsonl
+/vita/export/reports/diagnostic-bundle.txt
+/vita/export/reports/diagnostic-bundle.jsonl
+/vita/export/export-index.txt
+/vita/export/reports/self-test.txt
+/vita/export/reports/self-test.jsonl
 ```
 
-### Build hosted
+---
 
-```bash
-make hosted
-```
+## Editor seguro
 
-Salida esperada:
+Comandos dentro del editor:
 
-```text
-build/hosted/vitaos-hosted
-```
+- `.save`
+  - Guarda y continúa editando.
+  - Usa verificación `write -> read -> compare`.
+  - No reporta guardado exitoso si falla la verificación.
 
-## Ejecución
+- `.wq`
+  - Guarda y sale.
+  - Solo sale como guardado si `write/read/compare` fue exitoso.
 
-### EFI en QEMU
+- `.exit`
+  - Sale sin guardar cambios pendientes.
+  - No se persiste como texto en la nota.
 
-```bash
-make run
-```
+- `.quit`
+  - Alias de salida sin guardar.
 
-### Hosted
+- `.help`
+  - Muestra ayuda del editor.
 
-```bash
-./build/hosted/vitaos-hosted
-```
+Reglas clave:
 
-O indicando explícitamente la base SQLite:
+- `.save/.exit/.wq/.quit/.help` son comandos de control y **no** se escriben dentro de la nota.
+- El editor tiene marco visual tipo hoja/nano.
+- El color cyan/celeste del texto de edición es visual (principalmente hosted).
+- No se guardan ANSI ni bordes visuales dentro de la nota persistida.
 
-```bash
-./build/hosted/vitaos-hosted build/audit/vitaos-audit.db
-```
+---
 
-## Smoke tests
+## Historial persistente de sesión
 
-### Smoke de boot EFI
+Ruta:
 
-```bash
-make smoke
-```
+- `/vita/audit/sessions/`
 
-Valida al menos:
-- `VitaOS with AI / VitaOS con IA`
-- `Boot: OK`
-- `Arch: x86_64`
-- `Console: OK`
+Ejemplos:
 
-### Smoke de auditoría + proposals + VitaNet hosted
+- `/vita/audit/sessions/session-000001.txt`
+- `/vita/audit/sessions/session-000001.jsonl`
 
-```bash
-make smoke-audit
-```
+Comportamiento:
 
-Valida:
-- creación de `boot_session`;
-- creación de `hardware_snapshot`;
-- cadena hash de `audit_event`;
-- proposals iniciales;
-- peer básico descubierto;
-- intento de replicación de auditoría;
-- presencia de tablas relevantes del slice actual.
+- No se sobrescriben sesiones anteriores.
+- Se guarda input del usuario.
+- Se guarda output del sistema.
+- Se guardan eventos del editor.
+- JSONL conserva claves técnicas en inglés para consumo estable.
+- TXT prioriza legibilidad humana.
 
-## Verificación manual de la base SQLite
+Campos JSONL técnicos importantes:
 
-### Sesión de boot
+- `session_id`
+- `boot_id`
+- `node_id`
+- `host_id`
+- `arch`
+- `firmware`
+- `boot_mode`
+- `cpu_model`
+- `ram_bytes`
+- `storage_backend`
+- `storage_state`
+- `event_type`
+- `actor`
+- `text`
+- `seq`
 
-```bash
-sqlite3 build/audit/vitaos-audit.db "select boot_id,node_id,arch,boot_unix from boot_session;"
-```
+---
 
-### Eventos de auditoría
+## Autocompletado con Tab
 
-```bash
-sqlite3 build/audit/vitaos-audit.db "select event_seq,event_type,summary,prev_hash,event_hash from audit_event order by id;"
-```
+Estado actual:
 
-### Snapshot de hardware
+- Hosted-first.
+- Completa comandos conocidos.
+- Completa rutas conocidas.
+- Puede listar notas reales en hosted.
+- Si hay una coincidencia, completa directamente.
+- Si hay múltiples coincidencias, lista opciones.
+- No ejecuta automáticamente sin Enter.
+- No se activa dentro del editor.
+- En UEFI, disponibilidad puede depender del backend activo.
 
-```bash
-sqlite3 build/audit/vitaos-audit.db "select cpu_arch,cpu_model,ram_bytes,firmware_type,console_type,net_count,storage_count,usb_count,wifi_count from hardware_snapshot order by id desc limit 1;"
-```
-
-### Proposals
-
-```bash
-sqlite3 build/audit/vitaos-audit.db "select proposal_id,proposal_type,status from ai_proposal order by rowid;"
-```
-
-### Peers
-
-```bash
-sqlite3 build/audit/vitaos-audit.db "select peer_id,transport,trust_state,link_state from node_peer;"
-```
-
-## Flujo funcional esperado hoy
-
-En hosted, el flujo esperado del slice actual es:
-
-1. boot y validación de handoff;
-2. activación de backend SQLite;
-3. creación de `boot_session`;
-4. detección de hardware;
-5. persistencia de `hardware_snapshot`;
-6. generación de proposals iniciales;
-7. presentación de consola guiada mínima;
-8. inicio de VitaNet hosted;
-9. descubrimiento de peer y persistencia de `node_peer`;
-10. intento de replicación básica de bloque reciente de auditoría.
-
-## Comandos de consola ya contemplados en el slice
-
-La consola guiada mínima ya contempla o prepara el flujo para comandos como:
+Comandos mínimos documentados:
 
 - `status`
 - `hw`
 - `audit`
-- `peers`
-- `proposals`
-- `emergency`
-- `helpme`
-- `approve <id>`
-- `reject <id>`
+- `audit status`
+- `storage status`
+- `storage check`
+- `storage last-error`
+- `journal status`
+- `journal summary`
+- `note`
+- `notes list`
+- `edit`
+- `export session`
+- `export jsonl`
+- `diagnostic`
+- `export index`
+- `selftest`
 - `shutdown`
 
-## Límites actuales conocidos
+---
 
-Para mantener disciplina de milestone, todavía **no** se debe asumir que ya existen:
+## Colores y UX visual
 
-- GUI completa;
-- backend persistente UEFI completo;
-- protocolo VitaNet completo;
-- replicación bidireccional completa;
-- scheduler avanzado;
-- userland amplio;
-- control completo de `node_task`.
+### Hosted
 
-## Disciplina de desarrollo
+- ANSI habilitado.
+- Mensajería en español: verde.
+- Errores: rojo.
+- OK: verde.
+- Warnings: amarillo.
+- Input de usuario: rojo.
+- Texto del editor: cyan.
 
-Este repositorio se está reparando y consolidando archivo por archivo.
+### UEFI
 
-Reglas de trabajo activas:
-- no inventar features fuera del milestone;
-- respetar el esquema real de auditoría;
-- mantener compatibilidad con el código existente;
-- priorizar archivos completos listos para copiar y pegar;
-- mantener el foco en F1A/F1B mínimo real.
+- Fallback seguro.
+- Sin ANSI roto.
+- Texto normal si no hay soporte real.
 
-## Documentos recomendados
+Persistencia y sanitización:
 
-- `docs/VitaOS-SPEC.md`
-- `docs/history/applied-patches.md`
-- `docs/tools/no-python-runtime.md`
-- `docs/validation/f1a-f1b-validation-checklist.md`
-- `AGENTS.md`
-- `schema/audit.sql`
+- No se guardan ANSI en notas.
+- No se guardan ANSI en transcript/journal.
+- No se guardan ANSI en reportes exportados.
 
-## Nota para asistentes de IA y Codex
+---
 
-Antes de generar o modificar código:
-1. identificar el módulo exacto;
-2. respetar el milestone actual;
-3. no asumir APIs o estructuras inexistentes;
-4. preservar la trazabilidad de auditoría;
-5. devolver código completo cuando se pida.
+## Reportes
 
-## Política no-Python
+- TXT: español primero, lectura humana.
+- JSONL: claves técnicas estables en inglés.
 
-VitaOS no usa Python como dependencia de runtime/build obligatorio del sistema.
+Rutas principales:
 
+- `/vita/export/reports/last-session.txt`
+- `/vita/export/reports/last-session.jsonl`
+- `/vita/export/reports/diagnostic-bundle.txt`
+- `/vita/export/reports/diagnostic-bundle.jsonl`
+- `/vita/export/reports/self-test.txt`
+- `/vita/export/reports/self-test.jsonl`
+- `/vita/export/export-index.txt`
 
-Ver: `docs/tools/no-python-runtime.md`.
+---
+
+## Validadores y checks
+
+Comandos de validación usados en el flujo actual:
+
+```bash
+make clean
+make hosted
+make smoke-audit
+make
+./tools/test/validate-console-editor-history.sh
+./tools/test/validate-storage-persistence.sh
+./tools/test/validate-vitaos.sh
+make iso
+make smoke
+```
+
+Qué valida cada script clave:
+
+- `validate-console-editor-history.sh`:
+  - editor;
+  - nota limpia;
+  - `session-*.txt/jsonl`;
+  - eventos `user_input`, `system_output`, `editor_save`;
+  - ausencia de ANSI persistido.
+
+- `validate-storage-persistence.sh`:
+  - persistencia storage USB/hosted;
+  - presencia de reportes esperados.
+
+- `validate-vitaos.sh`:
+  - validación general del flujo VitaOS actual.
+
+---
+
+## Limitaciones reales
+
+No implementado todavía:
+
+- SQLite persistente completa en UEFI.
+- Red/Wi‑Fi real completa.
+- Integración real con AWS Bedrock.
+- IA local real completa.
+- GUI.
+- Framebuffer.
+- VFS amplio.
+- Userland amplio.
+
+Limitaciones de entorno (no bug de código):
+
+- `make iso` requiere `xorriso`.
+- `make smoke` requiere `qemu-system-x86_64` + OVMF.
+
+Si faltan esas dependencias, reportar como limitación del entorno.
+
+---
+
+## Dependencias
+
+### Build básico
+
+- `clang`
+- `lld`
+- `make`
+- `sqlite3` / `libsqlite3` (hosted)
+- `coreutils`
+
+### ISO
+
+- `xorriso`
+
+### Smoke QEMU/UEFI
+
+- `qemu-system-x86_64`
+- OVMF
+
+---
+
+## Quick start
+
+```bash
+make clean
+make hosted
+./build/hosted/vitaos-hosted
+```
+
+Prueba rápida de editor:
+
+```text
+edit /vita/notes/test.txt
+hola desde VitaOS
+.save
+.exit
+storage read /vita/notes/test.txt
+```
+
+Prueba rápida de reportes:
+
+```text
+storage status
+journal summary
+export session
+export jsonl
+diagnostic
+selftest
+```
+
+---
+
+## Última validación conocida
+
+- `make clean`: PASS
+- `make hosted`: PASS
+- `make smoke-audit`: PASS
+- `make`: PASS
+- `validate-console-editor-history`: PASS
+- `validate-storage-persistence`: PASS
+- `validate-vitaos`: PASS
+- `make iso`: limitación real por `xorriso` faltante
+- `make smoke`: limitación real por `qemu/ovmf` faltante
+
+---
+
+## Historial reciente de PRs (referencia)
+
+- PR 17: editor seguro
+- PR 18: historial persistente por sesión
+- PR 19: protección anti-recursión `transcript_error`
+- PR 20: metadatos reales de sesión/equipo
+- PR 21: Tab autocomplete
+- PR 22: bounds fix autocomplete
+- PR 23: colores bilingües
+- PR 24: reportes español primero
+- PR 25: validador consola/editor/historial
+- PR 26: prompt/input visual
+- PR 27: editor visual tipo hoja/nano
+
+---
+
+## Honestidad técnica (regla explícita)
+
+VitaOS mantiene `audit-first` como regla central.
+
+- No afirmar capacidades no implementadas.
+- No afirmar IA remota/local real cuando solo hay stubs o preparación.
+- No afirmar SQLite persistente completa en UEFI cuando no existe aún.
+- Si no hay auditoría persistente válida para modo completo, operar y comunicar modo restringido/diagnóstico.
+
