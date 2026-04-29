@@ -54,6 +54,11 @@ grep -q "session_start" build/storage/vita/audit/sessions/session-000001.jsonl |
 grep -q "user_input" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing user_input in transcript jsonl" >&2; exit 1; }
 grep -q "system_output" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing system_output in transcript jsonl" >&2; exit 1; }
 grep -q "command_executed" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing command_executed in transcript jsonl" >&2; exit 1; }
+grep -q '"arch":"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing arch in transcript jsonl" >&2; exit 1; }
+grep -q '"firmware":"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing firmware in transcript jsonl" >&2; exit 1; }
+grep -q '"storage_state":"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing storage_state in transcript jsonl" >&2; exit 1; }
+grep -q '"storage_backend":"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing storage_backend in transcript jsonl" >&2; exit 1; }
+! grep -q "Wi-Fi OK\\|network OK" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "transcript jsonl contains false network readiness claim" >&2; exit 1; }
 
 grep -q "storage bootstrap: verified" "$LOG_SUCCESS" || { echo "log missing storage bootstrap verified" >&2; exit 1; }
 grep -q "storage: verified writable" "$LOG_SUCCESS" || { echo "log missing storage writable verification" >&2; exit 1; }

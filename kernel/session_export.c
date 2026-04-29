@@ -260,6 +260,24 @@ bool session_export_write_report(const vita_command_context_t *ctx) {
 
     rb_line(&rb, "[boot]");
     rb_kv(&rb, "arch: ", safe_text(ctx->boot_status.arch_name, "unknown"));
+    {
+        char boot_id[64];
+        char node_id[64];
+        vita_storage_status_t st_local;
+        rb_kv(&rb, "firmware: ", (ctx->handoff && ctx->handoff->firmware_type == VITA_FIRMWARE_HOSTED) ? "hosted" : ((ctx->handoff && ctx->handoff->firmware_type == VITA_FIRMWARE_UEFI) ? "uefi" : "unknown"));
+        rb_kv(&rb, "boot_mode: ", boot_mode_name(ctx->handoff));
+        if (audit_get_identity(boot_id, sizeof(boot_id), node_id, sizeof(node_id))) {
+            rb_kv(&rb, "boot_id: ", safe_text(boot_id, "unknown"));
+            rb_kv(&rb, "node_id: ", safe_text(node_id, "unknown"));
+        } else {
+            rb_kv(&rb, "boot_id: ", "unknown");
+            rb_kv(&rb, "node_id: ", "unknown");
+        }
+        rb_kv(&rb, "host_id: ", "unknown");
+        storage_get_status(&st_local);
+        rb_kv(&rb, "storage_backend: ", safe_text(st_local.backend_name, "unknown"));
+        rb_kv(&rb, "storage_state: ", st_local.bootstrap_verified ? "verified" : "degraded");
+    }
     rb_kv(&rb, "boot_mode: ", boot_mode_name(ctx->handoff));
     rb_kv_bool(&rb, "console_ready: ", ctx->boot_status.console_ready);
     rb_kv_bool(&rb, "audit_ready: ", ctx->boot_status.audit_ready);

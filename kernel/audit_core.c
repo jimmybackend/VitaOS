@@ -816,6 +816,16 @@ bool audit_sqlite_summary(char *out, unsigned long out_cap) {
     return false;
 }
 
+bool audit_get_identity(char *boot_id, unsigned long boot_id_cap, char *node_id, unsigned long node_id_cap) {
+    if (!boot_id || boot_id_cap == 0 || !node_id || node_id_cap == 0) {
+        return false;
+    }
+
+    copy_text(boot_id, boot_id_cap, g_audit.boot_id[0] ? g_audit.boot_id : "unknown");
+    copy_text(node_id, node_id_cap, g_audit.node_id[0] ? g_audit.node_id : "unknown");
+    return true;
+}
+
 #else
 
 void audit_early_buffer_init(void) {
@@ -888,6 +898,19 @@ bool audit_export_current_session_events(const char *txt_path, const char *jsonl
 bool audit_sqlite_summary(char *out, unsigned long out_cap) {
     if (out && out_cap > 0) {
         out[0] = '\0';
+    }
+    return false;
+}
+
+bool audit_get_identity(char *boot_id, unsigned long boot_id_cap, char *node_id, unsigned long node_id_cap) {
+    unsigned long i;
+    if (boot_id && boot_id_cap > 0) {
+        for (i = 0; i + 1 < boot_id_cap && "unknown"[i]; ++i) boot_id[i] = "unknown"[i];
+        boot_id[i] = '\0';
+    }
+    if (node_id && node_id_cap > 0) {
+        for (i = 0; i + 1 < node_id_cap && "unknown"[i]; ++i) node_id[i] = "unknown"[i];
+        node_id[i] = '\0';
     }
     return false;
 }

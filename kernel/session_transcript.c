@@ -1,6 +1,21 @@
 #include <vita/session_transcript.h>
+#include <vita/audit.h>
+#include <vita/hw.h>
 #include <vita/storage.h>
 #include <vita/session_journal.h>
+
+typedef struct {
+    char boot_id[64];
+    char node_id[64];
+    char host_id[64];
+    char arch[32];
+    char firmware[16];
+    char boot_mode[16];
+    char cpu_model[128];
+    uint64_t ram_bytes;
+    char storage_backend[32];
+    char storage_state[32];
+} vita_session_identity_t;
 
 typedef struct {
     bool initialized;
@@ -15,8 +30,7 @@ typedef struct {
     char jsonl[8192];
     char state[32];
     char last_text[160];
-    char arch[32];
-    char firmware[16];
+    vita_session_identity_t identity;
     unsigned long txt_len;
     unsigned long jsonl_len;
 } st_t;
@@ -60,6 +74,16 @@ static void u6(unsigned int v, char o[7]) {
     o[5] = '0' + v % 10;
     o[6] = 0;
 }
+static void u64_to_dec(uint64_t value, char out[32]) {
+    char tmp[32];
+    int i = 0;
+    int j = 0;
+    if (!out) return;
+    if (value == 0) { out[0] = '0'; out[1] = 0; return; }
+    while (value > 0 && i < (int)(sizeof(tmp) - 1)) { tmp[i++] = (char)('0' + (value % 10ULL)); value /= 10ULL; }
+    while (i > 0) out[j++] = tmp[--i];
+    out[j] = 0;
+}
 
 static void mark_transcript_error_once(const char *reason) {
     if (g.error_reported) return;
@@ -101,10 +125,30 @@ static void event(const char *t, const char *a, const char *x) {
     ap(g.txt, sizeof(g.txt), &g.txt_len, "\n");
     ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "{\"session_id\":\"");
     ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.session_id);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"firmware\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.firmware);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"boot_id\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.boot_id);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"node_id\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.node_id);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"host_id\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.host_id);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"firmware\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.firmware);
     ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"arch\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.arch);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.arch);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"boot_mode\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.boot_mode);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"cpu_model\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.cpu_model);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"ram_bytes\":");
+    {
+        char ram[32];
+        u64_to_dec(g.identity.ram_bytes, ram);
+        ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, ram);
+    }
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, ",\"storage_backend\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.storage_backend);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"storage_state\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.storage_state);
     ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"event_type\":\"");
     ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, t);
     ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"actor\":\"");
@@ -148,8 +192,33 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
     g.jsonl_len = 0;
     g.initialized = true;
     cp(g.state, sizeof(g.state), "degraded");
-    cp(g.arch, sizeof(g.arch), arch && arch[0] ? arch : "unknown");
-    cp(g.firmware, sizeof(g.firmware), h && h->firmware_type == VITA_FIRMWARE_HOSTED ? "hosted" : (h && h->firmware_type == VITA_FIRMWARE_UEFI ? "uefi" : "unknown"));
+    cp(g.identity.arch, sizeof(g.identity.arch), arch && arch[0] ? arch : "unknown");
+    cp(g.identity.firmware, sizeof(g.identity.firmware), h && h->firmware_type == VITA_FIRMWARE_HOSTED ? "hosted" : (h && h->firmware_type == VITA_FIRMWARE_UEFI ? "uefi" : "unknown"));
+    cp(g.identity.boot_mode, sizeof(g.identity.boot_mode), g.identity.firmware);
+    cp(g.identity.boot_id, sizeof(g.identity.boot_id), "unknown");
+    cp(g.identity.node_id, sizeof(g.identity.node_id), "unknown");
+    cp(g.identity.host_id, sizeof(g.identity.host_id), "unknown");
+    cp(g.identity.cpu_model, sizeof(g.identity.cpu_model), "unknown");
+    cp(g.identity.storage_backend, sizeof(g.identity.storage_backend), "unknown");
+    cp(g.identity.storage_state, sizeof(g.identity.storage_state), "unknown");
+    g.identity.ram_bytes = 0;
+    {
+        vita_hw_snapshot_t hw;
+        vita_storage_status_t st;
+        char boot_id[64];
+        char node_id[64];
+        if (audit_get_identity(boot_id, sizeof(boot_id), node_id, sizeof(node_id))) {
+            cp(g.identity.boot_id, sizeof(g.identity.boot_id), boot_id);
+            cp(g.identity.node_id, sizeof(g.identity.node_id), node_id);
+        } /* TODO: persist host/node identity for UEFI-only flows without SQLite. */
+        if (hw_discovery_run(h, &hw)) {
+            cp(g.identity.cpu_model, sizeof(g.identity.cpu_model), hw.cpu_model[0] ? hw.cpu_model : "unknown");
+            g.identity.ram_bytes = hw.ram_bytes;
+        }
+        storage_get_status(&st);
+        cp(g.identity.storage_backend, sizeof(g.identity.storage_backend), st.backend_name[0] ? st.backend_name : "unknown");
+        cp(g.identity.storage_state, sizeof(g.identity.storage_state), st.bootstrap_verified ? "verified" : "degraded");
+    }
     if (!storage_is_bootstrap_verified()) {
         mark_transcript_error_once("storage_not_verified");
         return false;
@@ -174,10 +243,32 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
     apc(g.jsonl_path, sizeof(g.jsonl_path), ".jsonl");
     ap(g.txt, sizeof(g.txt), &g.txt_len, "=== VitaOS session transcript ===\nsession_id: ");
     ap(g.txt, sizeof(g.txt), &g.txt_len, g.session_id);
-    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nboot_id: unknown\nnode_id: unknown\narch: ");
-    ap(g.txt, sizeof(g.txt), &g.txt_len, g.arch);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\n\nDatos de esta sesion:\nsession_id: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.session_id);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nboot_id: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.boot_id);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nnode_id: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.node_id);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nhost_id: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.host_id);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\narquitectura: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.arch);
     ap(g.txt, sizeof(g.txt), &g.txt_len, "\nfirmware: ");
-    ap(g.txt, sizeof(g.txt), &g.txt_len, g.firmware);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.firmware);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nmodo de arranque: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.boot_mode);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nCPU: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.cpu_model);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nRAM: ");
+    {
+        char ram[32];
+        u64_to_dec(g.identity.ram_bytes, ram);
+        ap(g.txt, sizeof(g.txt), &g.txt_len, ram);
+    }
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nstorage/backend: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.storage_backend);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "\nstorage_state: ");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, g.identity.storage_state);
     ap(g.txt, sizeof(g.txt), &g.txt_len, "\n\n");
     g.active = true;
     cp(g.state, sizeof(g.state), "active");
@@ -217,6 +308,4 @@ const char *session_transcript_txt_path(void) {
 const char *session_transcript_jsonl_path(void) {
     return g.jsonl_path[0] ? g.jsonl_path : "unknown";
 }
-const char *session_transcript_state(void) {
-    return g.state;
-}
+const char *session_transcript_state(void) { return g.state; }

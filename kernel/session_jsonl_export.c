@@ -204,10 +204,25 @@ static bool text_exact_match(const char *a, const char *b) {
 }
 
 static void append_session_line(jsonl_builder_t *jb, const vita_command_context_t *ctx) {
+    char boot_id[64];
+    char node_id[64];
+    vita_storage_status_t st;
+    storage_get_status(&st);
     json_begin(jb, "session");
     json_prop_str(jb, "version", "f1a-f1b-session-jsonl-v1");
     json_prop_str(jb, "arch", safe_text(ctx->boot_status.arch_name, "unknown"));
     json_prop_str(jb, "boot_mode", boot_mode_name(ctx->handoff));
+    if (audit_get_identity(boot_id, sizeof(boot_id), node_id, sizeof(node_id))) {
+        json_prop_str(jb, "boot_id", safe_text(boot_id, "unknown"));
+        json_prop_str(jb, "node_id", safe_text(node_id, "unknown"));
+    } else {
+        json_prop_str(jb, "boot_id", "unknown");
+        json_prop_str(jb, "node_id", "unknown");
+    }
+    json_prop_str(jb, "host_id", "unknown");
+    json_prop_str(jb, "firmware", (ctx->handoff && ctx->handoff->firmware_type == VITA_FIRMWARE_HOSTED) ? "hosted" : ((ctx->handoff && ctx->handoff->firmware_type == VITA_FIRMWARE_UEFI) ? "uefi" : "unknown"));
+    json_prop_str(jb, "storage_backend", safe_text(st.backend_name, "unknown"));
+    json_prop_str(jb, "storage_state", st.bootstrap_verified ? "verified" : "degraded");
     json_prop_bool(jb, "console_ready", ctx->boot_status.console_ready);
     json_prop_bool(jb, "audit_ready", ctx->boot_status.audit_ready);
     json_prop_bool(jb, "restricted_diagnostic", !ctx->boot_status.audit_ready);
