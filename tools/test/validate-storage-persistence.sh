@@ -109,6 +109,24 @@ cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_ty
 cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_rotated"' || { echo "missing transcript_rotated event" >&2; exit 1; }
 cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_part_start"' || { echo "missing transcript_part_start event" >&2; exit 1; }
 ! cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_truncated"' || { echo "unexpected transcript_truncated after successful rotation" >&2; exit 1; }
+prev_seq=-1
+while IFS= read -r line; do
+  seq=$(printf '%s\n' "$line" | sed -n 's/.*"seq":\([0-9][0-9]*\).*/\1/p')
+  [[ -n "$seq" ]] || { echo "failed to parse seq in rotated transcript line" >&2; exit 1; }
+  if [[ "$prev_seq" -ge 0 && "$seq" -lt "$prev_seq" ]]; then
+    echo "rotated transcript seq decreased: $seq after $prev_seq" >&2
+    exit 1
+  fi
+  prev_seq=$seq
+done < <(cat build/storage/vita/audit/sessions/session-000002.jsonl build/storage/vita/audit/sessions/session-000002.part-*.jsonl)
+
+cat <<'CMDS' | ./build/hosted/vitaos-hosted > build/test/validate-previous-session.log 2>&1
+status
+shutdown
+CMDS
+[[ -f build/storage/vita/audit/sessions/session-000003.jsonl ]] || { echo "missing session-000003 transcript jsonl" >&2; exit 1; }
+! grep -q '"event_type":"previous_session_unclean"' build/storage/vita/audit/sessions/session-000003*.jsonl || { echo "false previous_session_unclean for rotated clean previous session" >&2; exit 1; }
+
 if find build/storage/vita/export/reports -type f \( -name '*.txt' -o -name '*.jsonl' \) \
   -exec grep -n $'\033\\[' {} + >/dev/null; then
   echo "ansi escape codes found in export reports" >&2
