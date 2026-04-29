@@ -31,6 +31,7 @@ COMMON_KERNEL := \
 	kernel/kmain.c \
 	kernel/console.c \
 	kernel/command_core.c \
+	kernel/console_autocomplete.c \
 	kernel/panic.c \
 	kernel/audit_core.c \
 	kernel/hardware_discovery.c \

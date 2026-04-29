@@ -14,6 +14,7 @@
 #include <vita/storage.h>
 #include <vita/session_transcript.h>
 #include <vita/proposal.h>
+#include <vita/console_autocomplete.h>
 
 #ifdef VITA_HOSTED
 #include <sqlite3.h>
@@ -858,12 +859,29 @@ void command_loop_run(vita_command_context_t *ctx) {
     audit_emit_boot_event("COMMAND_REPL_STARTED", "interactive command loop started");
 
     for (;;) {
+        bool had_tab = false;
+        bool completed = false;
+        unsigned long i = 0;
+
         console_guided_prompt();
 
         if (!console_read_line(line, sizeof(line))) {
             console_write_line("Console input unavailable or closed / Entrada de consola no disponible o cerrada");
             audit_emit_boot_event("COMMAND_REPL_INPUT_CLOSED", "console input unavailable or closed");
             break;
+        }
+        while (line[i]) {
+            if (line[i] == '\t') {
+                had_tab = true;
+                break;
+            }
+            i++;
+        }
+        if (had_tab) {
+            completed = console_autocomplete_line(line, sizeof(line));
+            if (!completed) {
+                continue;
+            }
         }
         console_pager_begin(VITA_CONSOLE_PAGE_LINES_DEFAULT);
         result = command_handle_line(ctx, line);
