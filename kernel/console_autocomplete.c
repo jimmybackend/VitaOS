@@ -61,11 +61,14 @@ static void gather_hosted_note_paths(const char *prefix, char out[VITA_AC_PATH_M
     if (!d) return;
     while ((ent = readdir(d)) != 0) {
         unsigned long n = 0;
+        if (*out_count >= VITA_AC_PATH_MAX) {
+            break;
+        }
         if (ent->d_name[0] == '.') continue;
         str_copy(out[*out_count], VITA_STORAGE_PATH_MAX, "/vita/notes/");
         n = str_len(out[*out_count]);
         str_copy(out[*out_count] + n, VITA_STORAGE_PATH_MAX - n, ent->d_name);
-        if (starts_with(out[*out_count], prefix) && *out_count < VITA_AC_PATH_MAX) {
+        if (starts_with(out[*out_count], prefix)) {
             (*out_count)++;
         }
     }
