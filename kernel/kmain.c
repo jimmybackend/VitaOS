@@ -22,6 +22,7 @@
 #include <vita/proposal.h>
 #include <vita/session_journal.h>
 #include <vita/storage.h>
+#include <vita/session_transcript.h>
 
 void panic_fatal(const char *reason);
 
@@ -237,6 +238,13 @@ void kmain(const vita_handoff_t *handoff) {
     } else {
         audit_emit_boot_event("SESSION_JOURNAL_UNAVAILABLE", "session journal not active");
     }
+    if (session_transcript_init(handoff, boot_status.arch_name)) {
+        session_transcript_log_storage_status("verified");
+        session_transcript_log_journal_status("active");
+    } else {
+        session_transcript_log_storage_status("degraded");
+        session_transcript_log_journal_status("inactive_or_unavailable");
+    }
 
     operational_ready = boot_status.audit_ready && storage_is_bootstrap_verified() && session_journal_is_active();
 
@@ -292,6 +300,7 @@ void kmain(const vita_handoff_t *handoff) {
                          proposal_ready,
                          node_ready);
     command_loop_run(&command_ctx);
+    session_transcript_shutdown();
 
     if (handoff->firmware_type == VITA_FIRMWARE_HOSTED) {
         return;

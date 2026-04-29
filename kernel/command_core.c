@@ -12,6 +12,7 @@
 #include <vita/session_journal.h>
 #include <vita/session_jsonl_export.h>
 #include <vita/storage.h>
+#include <vita/session_transcript.h>
 #include <vita/proposal.h>
 
 #ifdef VITA_HOSTED
@@ -674,6 +675,8 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
     if (!cmd[0]) {
         return VITA_COMMAND_CONTINUE;
     }
+    session_transcript_log_user_input(cmd);
+    session_transcript_log_command_executed(cmd);
 
     command_refresh_state(ctx);
 
@@ -835,6 +838,7 @@ void command_loop_run(vita_command_context_t *ctx) {
 
     console_write_line("Interactive console ready / Consola interactiva lista");
     console_write_line("Type helpme for commands / Escribe helpme para comandos");
+    session_transcript_log_system_output("interactive_console_ready", false);
     audit_emit_boot_event("COMMAND_REPL_STARTED", "interactive command loop started");
 
     for (;;) {
@@ -845,7 +849,6 @@ void command_loop_run(vita_command_context_t *ctx) {
             audit_emit_boot_event("COMMAND_REPL_INPUT_CLOSED", "console input unavailable or closed");
             break;
         }
-
         console_pager_begin(VITA_CONSOLE_PAGE_LINES_DEFAULT);
         result = command_handle_line(ctx, line);
         console_pager_end();

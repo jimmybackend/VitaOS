@@ -19,6 +19,7 @@
 #include <vita/console.h>
 #include <vita/editor.h>
 #include <vita/storage.h>
+#include <vita/session_transcript.h>
 
 #define VITA_EDITOR_TEXT_MAX 1536U
 #define VITA_EDITOR_LINE_MAX VITA_CONSOLE_LINE_MAX
@@ -485,6 +486,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
 
     console_pager_end();
     console_write_line("VitaOS note editor / Editor de notas VitaOS");
+    session_transcript_log_editor_event("editor_open", g_editor_path);
     console_write_line("Target / Destino:");
     console_write_line(g_editor_path);
     console_write_line("Editor: escribe texto. Comandos: .save, .wq, .exit, .help");
@@ -501,6 +503,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
         trim_right_in_place(line);
 
         if (str_eq(line, ".save")) {
+            session_transcript_log_editor_event("editor_save", g_editor_path);
             (void)editor_save_to_path(g_editor_path, false);
             continue;
         }
@@ -511,9 +514,12 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
         }
 
         if (str_eq(line, ".wq")) {
+            session_transcript_log_editor_event("editor_save", g_editor_path);
             if (editor_save_to_path(g_editor_path, false)) {
+                session_transcript_log_editor_event("editor_exit", g_editor_path);
                 return EDITOR_SAVE;
             }
+            session_transcript_log_editor_event("editor_save_failed", g_editor_path);
             continue;
         }
 
@@ -542,6 +548,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
 
         if (str_eq(line, ".cancel")) {
             console_write_line("editor: cancelled / cancelado");
+            session_transcript_log_editor_event("editor_cancel", g_editor_path);
             return EDITOR_CANCEL;
         }
 
@@ -594,6 +601,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
         }
 
         if (editor_append_line(line)) {
+            session_transcript_log_user_input(line);
             g_editor_dirty = true;
         }
     }

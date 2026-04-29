@@ -9,6 +9,7 @@
 #include <vita/console.h>
 #include <vita/session_export.h>
 #include <vita/storage.h>
+#include <vita/session_transcript.h>
 
 #define SESSION_EXPORT_PATH "/vita/export/reports/last-session.txt"
 #define SESSION_EXPORT_BUFFER_MAX 4096U
@@ -237,6 +238,9 @@ static void append_notes(report_builder_t *rb) {
     rb_line(rb, "messages_path: /vita/messages/");
     rb_line(rb, "emergency_reports_path: /vita/emergency/reports/");
     rb_line(rb, "manual_review: use notes list and cat /vita/notes/<file>");
+    rb_kv(rb, "transcript_txt_path: ", session_transcript_txt_path());
+    rb_kv(rb, "transcript_jsonl_path: ", session_transcript_jsonl_path());
+    rb_kv(rb, "transcript_state: ", session_transcript_state());
 }
 
 bool session_export_write_report(const vita_command_context_t *ctx) {
