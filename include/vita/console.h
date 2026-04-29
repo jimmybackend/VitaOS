@@ -28,6 +28,15 @@ typedef enum {
     VITA_CONSOLE_MODE_NODES
 } vita_console_mode_t;
 
+typedef enum {
+    VITA_CONSOLE_STYLE_DEFAULT = 0,
+    VITA_CONSOLE_STYLE_EN,
+    VITA_CONSOLE_STYLE_ES,
+    VITA_CONSOLE_STYLE_ERROR,
+    VITA_CONSOLE_STYLE_OK,
+    VITA_CONSOLE_STYLE_WARNING
+} vita_console_style_t;
+
 typedef struct {
     const char *arch_name;
     const char *boot_mode;
@@ -49,6 +58,13 @@ void console_bind_clear(vita_console_clear_fn clear_fn);
 void console_early_init(void);
 void console_write_line(const char *text);
 void console_write_raw(const char *text);
+void console_set_style(vita_console_style_t style);
+void console_reset_style(void);
+void console_write_en(const char *text);
+void console_write_es(const char *text);
+void console_write_error(const char *text);
+void console_write_ok(const char *text);
+void console_write_warning(const char *text);
 bool console_read_line(char *out, unsigned long out_cap);
 void console_clear_screen(void);
 

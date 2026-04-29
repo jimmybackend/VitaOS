@@ -204,8 +204,8 @@ void kmain(const vita_handoff_t *handoff) {
         audit_emit_boot_event("AUDIT_BACKEND_READY", "audit backend ready");
     } else {
         boot_status.audit_ready = false;
-        console_write_line("Audit persistence unavailable.");
-        console_write_line("Entering restricted diagnostic mode / Entrando en modo diagnostico restringido.");
+        console_write_warning("Audit persistence unavailable.");
+        console_write_es("Entrando en modo diagnostico restringido.");
     }
 
     audit_emit_boot_event("HW_DISCOVERY_STARTED", "hardware discovery started");
@@ -226,8 +226,8 @@ void kmain(const vita_handoff_t *handoff) {
             audit_emit_boot_event("STORAGE_BOOTSTRAP_VERIFIED", "storage bootstrap verified");
         } else {
             audit_emit_boot_event("STORAGE_BOOTSTRAP_FAILED", storage_last_error());
-            console_write_line("storage bootstrap: failed");
-            console_write_line(storage_last_error());
+            console_write_error("storage bootstrap: failed");
+            console_write_error(storage_last_error());
         }
     } else {
         audit_emit_boot_event("STORAGE_UNAVAILABLE", "storage not initialized");

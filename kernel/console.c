@@ -9,6 +9,7 @@ static vita_console_write_fn g_console_writer = 0;
 static vita_console_write_raw_fn g_console_raw_writer = 0;
 static vita_console_read_line_fn g_console_reader = 0;
 static vita_console_clear_fn g_console_clear = 0;
+static bool g_console_ansi_enabled = false;
 
 static bool g_pager_enabled = false;
 static bool g_pager_busy = false;
@@ -139,6 +140,27 @@ static void console_pager_after_line(void) {
     g_pager_busy = false;
 }
 
+static bool style_is_color(vita_console_style_t style) {
+    return style == VITA_CONSOLE_STYLE_ES ||
+           style == VITA_CONSOLE_STYLE_ERROR ||
+           style == VITA_CONSOLE_STYLE_OK ||
+           style == VITA_CONSOLE_STYLE_WARNING;
+}
+
+static const char *style_ansi(vita_console_style_t style) {
+    switch (style) {
+        case VITA_CONSOLE_STYLE_ES:
+        case VITA_CONSOLE_STYLE_OK:
+            return "\033[32m";
+        case VITA_CONSOLE_STYLE_ERROR:
+            return "\033[31m";
+        case VITA_CONSOLE_STYLE_WARNING:
+            return "\033[33m";
+        default:
+            return "\033[0m";
+    }
+}
+
 void console_bind_writer(vita_console_write_fn writer) {
     g_console_writer = writer;
 }
@@ -157,6 +179,11 @@ void console_bind_clear(vita_console_clear_fn clear_fn) {
 
 void console_early_init(void) {
     /* Early console writer/reader are provided by architecture boot stage. */
+#ifdef VITA_HOSTED
+    g_console_ansi_enabled = true;
+#else
+    g_console_ansi_enabled = false;
+#endif
 }
 
 void console_write_raw(const char *text) {
@@ -180,6 +207,47 @@ void console_write_line(const char *text) {
     }
     g_console_writer(text);
     console_pager_after_line();
+}
+
+void console_set_style(vita_console_style_t style) {
+    if (!g_console_ansi_enabled || !style_is_color(style)) {
+        return;
+    }
+    console_write_raw(style_ansi(style));
+}
+
+void console_reset_style(void) {
+    if (!g_console_ansi_enabled) {
+        return;
+    }
+    console_write_raw("\033[0m");
+}
+
+static void console_write_styled(vita_console_style_t style, const char *prefix, const char *text) {
+    char line[256];
+
+    if (prefix && prefix[0]) {
+        str_copy(line, sizeof(line), prefix);
+        str_append(line, sizeof(line), text ? text : "");
+    } else {
+        str_copy(line, sizeof(line), text ? text : "");
+    }
+
+    console_set_style(style);
+    console_write_line(line);
+    console_reset_style();
+}
+
+void console_write_en(const char *text) { console_write_styled(VITA_CONSOLE_STYLE_EN, "", text); }
+void console_write_es(const char *text) { console_write_styled(VITA_CONSOLE_STYLE_ES, "", text); }
+void console_write_error(const char *text) {
+    console_write_styled(VITA_CONSOLE_STYLE_ERROR, g_console_ansi_enabled ? "" : "[ERROR] ", text);
+}
+void console_write_ok(const char *text) {
+    console_write_styled(VITA_CONSOLE_STYLE_OK, g_console_ansi_enabled ? "" : "[OK] ", text);
+}
+void console_write_warning(const char *text) {
+    console_write_styled(VITA_CONSOLE_STYLE_WARNING, g_console_ansi_enabled ? "" : "[WARN] ", text);
 }
 
 bool console_read_line(char *out, unsigned long out_cap) {
@@ -221,8 +289,9 @@ void console_pager_end(void) {
 }
 
 void console_banner(const vita_boot_status_t *status) {
-    console_write_line("VitaOS with AI / VitaOS con IA");
-    console_write_line("Boot: OK");
+    console_write_en("VitaOS with AI /");
+    console_write_es("VitaOS con IA");
+    console_write_ok("Boot: OK");
 
     if (status && status->arch_name && status->arch_name[0]) {
         char line[96];
@@ -230,11 +299,11 @@ void console_banner(const vita_boot_status_t *status) {
         str_append(line, sizeof(line), status->arch_name);
         console_write_line(line);
     } else {
-        console_write_line("Arch: unknown");
+        console_write_warning("Arch: unknown");
     }
 
-    console_write_line((status && status->console_ready) ? "Console: OK" : "Console: MISSING");
-    console_write_line((status && status->audit_ready) ? "Audit: READY" : "Audit: FAILED");
+    if (status && status->console_ready) { console_write_ok("Console: OK"); } else { console_write_warning("Console: MISSING"); }
+    if (status && status->audit_ready) { console_write_ok("Audit: READY"); } else { console_write_error("Audit: FAILED"); }
 }
 
 void console_guided_show_welcome(const vita_console_state_t *state) {
