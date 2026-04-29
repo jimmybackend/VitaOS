@@ -258,10 +258,17 @@ bool console_read_line(char *out, unsigned long out_cap) {
     out[0] = '\0';
 
     if (!g_console_reader) {
+        console_input_style_end();
+        console_prompt_end();
         return false;
     }
 
-    return g_console_reader(out, out_cap);
+    {
+        bool ok = g_console_reader(out, out_cap);
+        console_input_style_end();
+        console_prompt_end();
+        return ok;
+    }
 }
 
 void console_clear_screen(void) {
@@ -396,6 +403,40 @@ void console_guided_show_status(const vita_console_state_t *state) {
     console_write_kv_u32("Pending proposals: ", state->pending_proposal_count);
 }
 
+void console_prompt_begin(void) {
+    if (!g_console_ansi_enabled) {
+        return;
+    }
+
+    console_write_raw("\033[?25h");
+}
+
+void console_prompt_end(void) {
+    if (!g_console_ansi_enabled) {
+        return;
+    }
+
+    console_reset_style();
+}
+
+void console_input_style_begin(void) {
+    if (!g_console_ansi_enabled) {
+        return;
+    }
+
+    console_write_raw("\033[31m");
+}
+
+void console_input_style_end(void) {
+    if (!g_console_ansi_enabled) {
+        return;
+    }
+
+    console_reset_style();
+}
+
 void console_guided_prompt(void) {
+    console_prompt_begin();
     console_write_raw("> ");
+    console_input_style_begin();
 }

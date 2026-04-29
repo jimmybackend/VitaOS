@@ -77,6 +77,10 @@ void console_guided_show_welcome(const vita_console_state_t *state);
 void console_guided_show_menu(void);
 void console_guided_show_help(void);
 void console_guided_show_status(const vita_console_state_t *state);
+void console_prompt_begin(void);
+void console_prompt_end(void);
+void console_input_style_begin(void);
+void console_input_style_end(void);
 void console_guided_prompt(void);
 
 #endif
