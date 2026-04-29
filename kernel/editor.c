@@ -40,6 +40,7 @@ static char g_editor_saveas_path[VITA_STORAGE_PATH_MAX];
 static bool g_editor_loaded_existing = false;
 static bool g_editor_destructive_change = false;
 static bool g_editor_save_confirmed = false;
+static bool g_editor_dirty = false;
 static editor_open_mode_t g_editor_mode = EDITOR_OPEN_EDIT;
 
 static void mem_zero(void *ptr, unsigned long n) {
@@ -272,6 +273,8 @@ static void editor_show_help(void) {
     console_write_line("VitaOS editor / Editor VitaOS:");
     console_write_line("Write one line at a time / Escribe una linea a la vez");
     console_write_line(".save       -> save file / guardar archivo");
+    console_write_line(".wq         -> save and exit / guardar y salir");
+    console_write_line(".exit/.quit -> exit without save / salir sin guardar");
     console_write_line(".save!      -> force save after destructive change");
     console_write_line(".confirm    -> confirm destructive save");
     console_write_line(".saveas PATH-> save current text to another /vita/... path");
@@ -394,6 +397,8 @@ static bool note_bootstrap_if_missing(const char *path) {
 }
 
 static bool editor_save_to_path(const char *path, bool force) {
+    char verify[VITA_STORAGE_READ_MAX];
+
     if (!path_allowed(path)) {
         console_write_line("editor: save path must be inside /vita/");
         return false;
@@ -406,15 +411,22 @@ static bool editor_save_to_path(const char *path, bool force) {
         return false;
     }
 
-    if (storage_write_text(path, g_editor_text)) {
-        console_write_line("editor: saved / guardado");
-        console_write_line(path);
-        return true;
+    if (!storage_write_text(path, g_editor_text)) {
+        console_write_line("note save: failed");
+        console_write_line(storage_last_error());
+        return false;
     }
 
-    console_write_line("note save: failed");
-    console_write_line(storage_last_error());
-    return false;
+    if (!storage_read_text(path, verify, sizeof(verify)) || !text_exact_match(verify, g_editor_text)) {
+        console_write_line("note save: verify failed");
+        console_write_line(storage_last_error());
+        return false;
+    }
+
+    console_write_line("editor: saved / guardado");
+    console_write_line(path);
+    g_editor_dirty = false;
+    return true;
 }
 
 static bool editor_saveas(const char *args) {
@@ -457,6 +469,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
     g_editor_loaded_existing = false;
     g_editor_destructive_change = false;
     g_editor_save_confirmed = false;
+    g_editor_dirty = false;
     g_editor_mode = mode;
 
     if (storage_read_text(g_editor_path, g_editor_text, sizeof(g_editor_text))) {
@@ -474,6 +487,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
     console_write_line("VitaOS note editor / Editor de notas VitaOS");
     console_write_line("Target / Destino:");
     console_write_line(g_editor_path);
+    console_write_line("Editor: escribe texto. Comandos: .save, .wq, .exit, .help");
     editor_show_help();
 
     for (;;) {
@@ -487,17 +501,30 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
         trim_right_in_place(line);
 
         if (str_eq(line, ".save")) {
+            (void)editor_save_to_path(g_editor_path, false);
+            continue;
+        }
+
+        if (str_eq(line, ".save!")) {
+            (void)editor_save_to_path(g_editor_path, true);
+            continue;
+        }
+
+        if (str_eq(line, ".wq")) {
             if (editor_save_to_path(g_editor_path, false)) {
                 return EDITOR_SAVE;
             }
             continue;
         }
 
-        if (str_eq(line, ".save!")) {
-            if (editor_save_to_path(g_editor_path, true)) {
-                return EDITOR_SAVE;
+        if (str_eq(line, ".exit") || str_eq(line, ".quit") || str_eq(line, "exit")) {
+            if (g_editor_dirty) {
+                console_write_line("editor: exiting without saving pending changes");
+                console_write_line("editor: salida sin guardar cambios pendientes");
+            } else {
+                console_write_line("editor: exit / salir");
             }
-            continue;
+            return EDITOR_CANCEL;
         }
 
         if (starts_with(line, ".saveas ")) {
@@ -550,6 +577,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
             g_editor_mode = EDITOR_OPEN_EDIT;
             g_editor_destructive_change = true;
             g_editor_save_confirmed = false;
+            g_editor_dirty = true;
             console_write_line("editor: replace mode enabled; text cleared");
             console_write_line("Use .confirm before .save, or .save! to force.");
             continue;
@@ -559,12 +587,15 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
             mem_zero(g_editor_text, sizeof(g_editor_text));
             g_editor_destructive_change = true;
             g_editor_save_confirmed = false;
+            g_editor_dirty = true;
             console_write_line("editor: current text cleared / texto actual borrado");
             console_write_line("Use .confirm before .save, or .save! to force.");
             continue;
         }
 
-        (void)editor_append_line(line);
+        if (editor_append_line(line)) {
+            g_editor_dirty = true;
+        }
     }
 }
 
