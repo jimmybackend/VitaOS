@@ -220,6 +220,57 @@ static bool rotate_jsonl_part(void) {
     { char pn[5]; u4(g.current_jsonl_part, pn); apc(msg, sizeof(msg), pn); }
     return append_control_jsonl_event("transcript_part_start", msg);
 }
+static void append_trimmed_seq(char *dst, unsigned long cap, unsigned int seq_value) {
+    char seq[7];
+    unsigned long m = 0;
+    u6(seq_value, seq);
+    while (seq[m] == '0' && seq[m + 1]) m++;
+    apc(dst, cap, seq + m);
+}
+static void build_jsonl_event_line(char *jsonl_line, unsigned long cap, unsigned int seq_value,
+                                   const char *event_type, const char *actor, const char *text) {
+    unsigned long n = 0;
+    cp(jsonl_line, cap, "{\"session_id\":\"");
+    apc(jsonl_line, cap, g.session_id);
+    apc(jsonl_line, cap, "\",\"boot_id\":\"");
+    apc(jsonl_line, cap, g.identity.boot_id);
+    apc(jsonl_line, cap, "\",\"node_id\":\"");
+    apc(jsonl_line, cap, g.identity.node_id);
+    apc(jsonl_line, cap, "\",\"host_id\":\"");
+    apc(jsonl_line, cap, g.identity.host_id);
+    apc(jsonl_line, cap, "\",\"firmware\":\"");
+    apc(jsonl_line, cap, g.identity.firmware);
+    apc(jsonl_line, cap, "\",\"arch\":\"");
+    apc(jsonl_line, cap, g.identity.arch);
+    apc(jsonl_line, cap, "\",\"boot_mode\":\"");
+    apc(jsonl_line, cap, g.identity.boot_mode);
+    apc(jsonl_line, cap, "\",\"cpu_model\":\"");
+    apc(jsonl_line, cap, g.identity.cpu_model);
+    apc(jsonl_line, cap, "\",\"ram_bytes\":");
+    { char ram[32]; u64_to_dec(g.identity.ram_bytes, ram); apc(jsonl_line, cap, ram); }
+    apc(jsonl_line, cap, ",\"storage_backend\":\"");
+    apc(jsonl_line, cap, g.identity.storage_backend);
+    apc(jsonl_line, cap, "\",\"storage_state\":\"");
+    apc(jsonl_line, cap, g.identity.storage_state);
+    apc(jsonl_line, cap, "\",\"event_type\":\"");
+    apc(jsonl_line, cap, event_type);
+    apc(jsonl_line, cap, "\",\"actor\":\"");
+    apc(jsonl_line, cap, actor);
+    apc(jsonl_line, cap, "\",\"text\":\"");
+    if (text) {
+        while (text[n] && n < 180U) {
+            char c = text[n++];
+            if (c == '"') apc(jsonl_line, cap, "\\\"");
+            else if (c == '\\') apc(jsonl_line, cap, "\\\\");
+            else if (c == '\n') apc(jsonl_line, cap, "\\n");
+            else if (c == '\r') apc(jsonl_line, cap, "\\r");
+            else { char one[2] = {c, 0}; apc(jsonl_line, cap, one); }
+        }
+    }
+    apc(jsonl_line, cap, "\",\"seq\":");
+    append_trimmed_seq(jsonl_line, cap, seq_value);
+    apc(jsonl_line, cap, "}\n");
+}
 /*
  * Critical transcript safety notes:
  * - Never call console_write_line()/console_write_raw() from transcript code.
@@ -230,10 +281,27 @@ static bool rotate_jsonl_part(void) {
  */
 static void event(const char *t, const char *a, const char *x) {
     char seq[7], line[256], jsonl_line[1024];
-    unsigned long n = 0, m = 0;
+    unsigned int event_seq = 0;
     if (!g.active || g.busy) return;
     g.busy = true;
-    g.seq++;
+    if (!g.jsonl_locked) {
+        event_seq = g.seq + 1U;
+        build_jsonl_event_line(jsonl_line, sizeof(jsonl_line), event_seq, t, a, x ? x : "");
+        if (!append_jsonl_line(jsonl_line)) {
+            if (!rotate_jsonl_part()) {
+                report_transcript_truncated_once();
+            } else {
+                event_seq = g.seq + 1U;
+                build_jsonl_event_line(jsonl_line, sizeof(jsonl_line), event_seq, t, a, x ? x : "");
+                if (!append_jsonl_line(jsonl_line)) {
+                    report_transcript_truncated_once();
+                }
+            }
+        }
+    } else {
+        event_seq = g.seq + 1U;
+    }
+    g.seq = event_seq;
     u6(g.seq, seq);
     cp(line, sizeof(line), "[");
     apc(line, sizeof(line), seq);
@@ -243,56 +311,6 @@ static void event(const char *t, const char *a, const char *x) {
     apc(line, sizeof(line), x ? x : "");
     ap(g.txt, sizeof(g.txt), &g.txt_len, line);
     ap(g.txt, sizeof(g.txt), &g.txt_len, "\n");
-    cp(jsonl_line, sizeof(jsonl_line), "{\"session_id\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.session_id);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"boot_id\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.boot_id);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"node_id\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.node_id);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"host_id\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.host_id);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"firmware\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.firmware);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"arch\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.arch);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"boot_mode\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.boot_mode);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"cpu_model\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.cpu_model);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"ram_bytes\":");
-    {
-        char ram[32];
-        u64_to_dec(g.identity.ram_bytes, ram);
-        apc(jsonl_line, sizeof(jsonl_line), ram);
-    }
-    apc(jsonl_line, sizeof(jsonl_line), ",\"storage_backend\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.storage_backend);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"storage_state\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), g.identity.storage_state);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"event_type\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), t);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"actor\":\"");
-    apc(jsonl_line, sizeof(jsonl_line), a);
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"text\":\"");
-    if (x) {
-        while (x[n] && n < 180U) {
-            char c = x[n++];
-            if (c == '"') apc(jsonl_line, sizeof(jsonl_line), "\\\"");
-            else if (c == '\\') apc(jsonl_line, sizeof(jsonl_line), "\\\\");
-            else if (c == '\n') apc(jsonl_line, sizeof(jsonl_line), "\\n");
-            else if (c == '\r') apc(jsonl_line, sizeof(jsonl_line), "\\r");
-            else { char one[2] = {c, 0}; apc(jsonl_line, sizeof(jsonl_line), one); }
-        }
-    }
-    apc(jsonl_line, sizeof(jsonl_line), "\",\"seq\":");
-    while (seq[m] == '0' && seq[m + 1]) m++;
-    apc(jsonl_line, sizeof(jsonl_line), seq + m);
-    apc(jsonl_line, sizeof(jsonl_line), "}\n");
-    if (!g.jsonl_locked && !append_jsonl_line(jsonl_line)) {
-        if (!rotate_jsonl_part() || !append_jsonl_line(jsonl_line)) {
-            report_transcript_truncated_once();
-        }
-    }
     if (!flushv()) {
         g.active = false;
         cp(g.state, sizeof(g.state), "error");
@@ -416,9 +434,23 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
         cp(prev_jsonl, sizeof(prev_jsonl), "/vita/audit/sessions/");
         apc(prev_jsonl, sizeof(prev_jsonl), prev_id);
         apc(prev_jsonl, sizeof(prev_jsonl), ".jsonl");
-        if (storage_read_text(prev_jsonl, prev_body, sizeof(prev_body))) {
-            if (!contains(prev_body, "\"event_type\":\"session_end\"") &&
-                !contains(prev_body, "\"event_type\":\"transcript_truncated\"")) {
+        {
+            bool prev_clean = false;
+            bool prev_has_rotated_part = false;
+            unsigned int part = 1;
+            while (part <= 512U) {
+                build_jsonl_part_path(prev_id, part, prev_jsonl, sizeof(prev_jsonl));
+                if (storage_read_text(prev_jsonl, prev_body, sizeof(prev_body))) {
+                    if (part > 1U) prev_has_rotated_part = true;
+                    if (contains(prev_body, "\"event_type\":\"session_end\"") ||
+                        contains(prev_body, "\"event_type\":\"transcript_truncated\"")) {
+                        prev_clean = true;
+                        break;
+                    }
+                }
+                part++;
+            }
+            if (!prev_clean && !prev_has_rotated_part) {
                 char msg[128];
                 cp(msg, sizeof(msg), "previous_session_id=");
                 apc(msg, sizeof(msg), prev_id);
