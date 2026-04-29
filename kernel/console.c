@@ -4,12 +4,14 @@
  */
 
 #include <vita/console.h>
+#include <vita/session_transcript.h>
 
 static vita_console_write_fn g_console_writer = 0;
 static vita_console_write_raw_fn g_console_raw_writer = 0;
 static vita_console_read_line_fn g_console_reader = 0;
 static vita_console_clear_fn g_console_clear = 0;
 static bool g_console_ansi_enabled = false;
+static bool g_console_transcript_logging = false;
 
 static bool g_pager_enabled = false;
 static bool g_pager_busy = false;
@@ -209,6 +211,11 @@ void console_write_line(const char *text) {
         return;
     }
     g_console_writer(text);
+    if (!g_console_transcript_logging) {
+        g_console_transcript_logging = true;
+        session_transcript_log_system_output(text, false);
+        g_console_transcript_logging = false;
+    }
     console_pager_after_line();
 }
 
