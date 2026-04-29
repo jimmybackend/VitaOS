@@ -144,7 +144,8 @@ static bool style_is_color(vita_console_style_t style) {
     return style == VITA_CONSOLE_STYLE_ES ||
            style == VITA_CONSOLE_STYLE_ERROR ||
            style == VITA_CONSOLE_STYLE_OK ||
-           style == VITA_CONSOLE_STYLE_WARNING;
+           style == VITA_CONSOLE_STYLE_WARNING ||
+           style == VITA_CONSOLE_STYLE_EDITOR_TEXT;
 }
 
 static const char *style_ansi(vita_console_style_t style) {
@@ -156,6 +157,8 @@ static const char *style_ansi(vita_console_style_t style) {
             return "\033[31m";
         case VITA_CONSOLE_STYLE_WARNING:
             return "\033[33m";
+        case VITA_CONSOLE_STYLE_EDITOR_TEXT:
+            return "\033[36m";
         default:
             return "\033[0m";
     }
@@ -248,6 +251,9 @@ void console_write_ok(const char *text) {
 }
 void console_write_warning(const char *text) {
     console_write_styled(VITA_CONSOLE_STYLE_WARNING, g_console_ansi_enabled ? "" : "[WARN] ", text);
+}
+void console_write_editor_text(const char *text) {
+    console_write_styled(VITA_CONSOLE_STYLE_EDITOR_TEXT, "", text);
 }
 
 bool console_read_line(char *out, unsigned long out_cap) {

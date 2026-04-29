@@ -290,6 +290,20 @@ static void editor_show_help(void) {
     console_write_line("Limit: 1536 bytes per note in this first editor slice.");
 }
 
+static void editor_show_frame(const char *path) {
+    console_write_line("+--------------------------------------------------+");
+    console_write_line("| VitaOS Editor                                    |");
+    console_write_line("| Archivo / File:                                  |");
+    console_write_line(path && path[0] ? path : "unknown");
+    console_write_line("+--------------------------------------------------+");
+    console_write_line("| Escribe abajo / Write below                      |");
+    console_write_line("+--------------------------------------------------+");
+}
+
+static void editor_show_command_bar(void) {
+    console_write_line("Comandos: .save guardar | .wq guardar y salir | .exit salir | .quit salir | .help ayuda");
+}
+
 static void editor_show_current_text(void) {
     console_write_line("--- note text / texto actual ---");
     if (g_editor_text[0]) {
@@ -485,12 +499,9 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
     }
 
     console_pager_end();
-    console_write_line("VitaOS note editor / Editor de notas VitaOS");
+    editor_show_frame(g_editor_path);
     session_transcript_log_editor_event("editor_open", g_editor_path);
-    console_write_line("Target / Destino:");
-    console_write_line(g_editor_path);
-    console_write_line("Editor: escribe texto. Comandos: .save, .wq, .exit, .help");
-    editor_show_help();
+    editor_show_command_bar();
 
     for (;;) {
         console_write_raw((g_editor_mode == EDITOR_OPEN_APPEND) ? "append> " : "edit> ");
@@ -554,6 +565,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
 
         if (str_eq(line, ".help")) {
             editor_show_help();
+            editor_show_command_bar();
             continue;
         }
 
@@ -601,6 +613,7 @@ static editor_result_t editor_run(const char *path, editor_open_mode_t mode) {
         }
 
         if (editor_append_line(line)) {
+            console_write_editor_text(line);
             session_transcript_log_user_input(line);
             g_editor_dirty = true;
         }
