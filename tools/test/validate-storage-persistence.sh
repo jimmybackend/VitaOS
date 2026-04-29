@@ -70,7 +70,11 @@ grep -q "Diagnostico" build/storage/vita/export/reports/diagnostic-bundle.txt ||
 grep -q "Resultado" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing resultado heading" >&2; exit 1; }
 grep -q '"boot_id"' build/storage/vita/export/reports/last-session.jsonl || { echo "jsonl missing boot_id key" >&2; exit 1; }
 grep -q '"event_type"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "jsonl missing event_type key" >&2; exit 1; }
-! rg -n "\\x1B\\[" build/storage/vita/export/reports/*.txt build/storage/vita/export/reports/*.jsonl >/dev/null || { echo "ansi escape codes found in export reports" >&2; exit 1; }
+if find build/storage/vita/export/reports -type f \( -name '*.txt' -o -name '*.jsonl' \) \
+  -exec grep -n $'\033\\[' {} + >/dev/null; then
+  echo "ansi escape codes found in export reports" >&2
+  exit 1
+fi
 
 grep -q "storage bootstrap: verified" "$LOG_SUCCESS" || { echo "log missing storage bootstrap verified" >&2; exit 1; }
 grep -q "storage: verified writable" "$LOG_SUCCESS" || { echo "log missing storage writable verification" >&2; exit 1; }
