@@ -43,6 +43,7 @@ COMMON_KERNEL := \
 	kernel/session_export.c \
 	kernel/session_jsonl_export.c \
 	kernel/session_journal.c \
+	kernel/session_transcript.c \
 	kernel/power.c \
 	kernel/net_status.c \
 	kernel/net_connect.c

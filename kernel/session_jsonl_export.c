@@ -15,6 +15,7 @@
 #include <vita/console.h>
 #include <vita/session_jsonl_export.h>
 #include <vita/storage.h>
+#include <vita/session_transcript.h>
 
 #define SESSION_JSONL_EXPORT_PATH "/vita/export/reports/last-session.jsonl"
 #define SESSION_JSONL_EXPORT_BUFFER_MAX 4096U
@@ -296,6 +297,9 @@ static void append_paths_line(jsonl_builder_t *jb) {
     json_prop_str(jb, "emergency_reports", "/vita/emergency/reports/");
     json_prop_str(jb, "exports", "/vita/export/");
     json_prop_str(jb, "jsonl_report", SESSION_JSONL_EXPORT_PATH);
+    json_prop_str(jb, "transcript_txt_path", session_transcript_txt_path());
+    json_prop_str(jb, "transcript_jsonl_path", session_transcript_jsonl_path());
+    json_prop_str(jb, "transcript_state", session_transcript_state());
     json_end(jb);
 }
 

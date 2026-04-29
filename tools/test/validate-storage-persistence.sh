@@ -36,6 +36,8 @@ required_files=(
   build/storage/vita/tmp/boot-storage-verify.txt
   build/storage/vita/audit/session-journal.txt
   build/storage/vita/audit/session-journal.jsonl
+  build/storage/vita/audit/sessions/session-000001.txt
+  build/storage/vita/audit/sessions/session-000001.jsonl
   build/storage/vita/notes/usb-test.txt
   build/storage/vita/export/reports/last-session.txt
   build/storage/vita/export/reports/last-session.jsonl
@@ -47,6 +49,11 @@ required_files=(
 for f in "${required_files[@]}"; do
   [[ -f "$f" ]] || { echo "missing required file: $f" >&2; exit 1; }
 done
+
+grep -q "session_start" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing session_start in transcript jsonl" >&2; exit 1; }
+grep -q "user_input" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing user_input in transcript jsonl" >&2; exit 1; }
+grep -q "system_output" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing system_output in transcript jsonl" >&2; exit 1; }
+grep -q "command_executed" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing command_executed in transcript jsonl" >&2; exit 1; }
 
 grep -q "storage bootstrap: verified" "$LOG_SUCCESS" || { echo "log missing storage bootstrap verified" >&2; exit 1; }
 grep -q "storage: verified writable" "$LOG_SUCCESS" || { echo "log missing storage writable verification" >&2; exit 1; }
