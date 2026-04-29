@@ -254,7 +254,7 @@ bool session_export_write_report(const vita_command_context_t *ctx) {
 
     rb_init(&rb, g_session_export_buffer, sizeof(g_session_export_buffer));
 
-    rb_line(&rb, "VitaOS session summary / Resumen de sesion VitaOS");
+    rb_line(&rb, "Resumen de sesion VitaOS / VitaOS session summary");
     rb_line(&rb, "version: f1a-f1b-session-export-v1");
     rb_line(&rb, "");
 
@@ -294,10 +294,10 @@ bool session_export_write_report(const vita_command_context_t *ctx) {
     append_notes(&rb);
 
     rb_line(&rb, "");
-    rb_line(&rb, "[limitations]");
-    rb_line(&rb, "- UEFI SQLite persistence is not complete yet.");
-    rb_line(&rb, "- UEFI network transport is diagnostic/staged unless later patches enable it.");
-    rb_line(&rb, "- This report is a plain text checkpoint for human review.");
+    rb_line(&rb, "[limitaciones]");
+    rb_line(&rb, "- UEFI SQLite persistence: no implementado completo.");
+    rb_line(&rb, "- Transporte de red UEFI: no disponible fuera de diagnostico.");
+    rb_line(&rb, "- Este reporte TXT es un punto de control para revision humana.");
 
     rb_line(&rb, "");
     rb_kv(&rb, "saved_to: ", SESSION_EXPORT_PATH);

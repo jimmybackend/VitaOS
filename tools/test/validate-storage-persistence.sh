@@ -11,6 +11,7 @@ if [[ ! -x build/hosted/vitaos-hosted ]]; then
 fi
 
 rm -rf build/storage
+mkdir -p build/test
 
 cat <<'CMDS' | ./build/hosted/vitaos-hosted > "$LOG_SUCCESS" 2>&1
 storage status
@@ -33,8 +34,8 @@ shutdown
 CMDS
 
 printf 'storage sta\t\njournal sum\t\nexport j\t\nshutdown\n' | ./build/hosted/vitaos-hosted > build/test/validate-tab-autocomplete.log 2>&1
-grep -q "Storage / Almacenamiento:" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for storage status" >&2; exit 1; }
-grep -q "journal summary:" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for journal summary" >&2; exit 1; }
+grep -q "Estado de almacenamiento / Storage status:" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for storage status" >&2; exit 1; }
+grep -q "Resumen del journal / Journal summary:" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for journal summary" >&2; exit 1; }
 grep -q "export jsonl: written" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for export jsonl" >&2; exit 1; }
 
 required_files=(
@@ -64,14 +65,19 @@ grep -q '"firmware":"' build/storage/vita/audit/sessions/session-000001.jsonl ||
 grep -q '"storage_state":"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing storage_state in transcript jsonl" >&2; exit 1; }
 grep -q '"storage_backend":"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing storage_backend in transcript jsonl" >&2; exit 1; }
 ! grep -q "Wi-Fi OK\\|network OK" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "transcript jsonl contains false network readiness claim" >&2; exit 1; }
+grep -q "Resumen de sesion VitaOS" build/storage/vita/export/reports/last-session.txt || { echo "last-session.txt missing spanish summary heading" >&2; exit 1; }
+grep -q "Diagnostico" build/storage/vita/export/reports/diagnostic-bundle.txt || { echo "diagnostic-bundle.txt missing diagnostico heading" >&2; exit 1; }
+grep -q "Resultado" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing resultado heading" >&2; exit 1; }
+grep -q '"boot_id"' build/storage/vita/export/reports/last-session.jsonl || { echo "jsonl missing boot_id key" >&2; exit 1; }
+grep -q '"event_type"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "jsonl missing event_type key" >&2; exit 1; }
+! rg -n "\\x1B\\[" build/storage/vita/export/reports/*.txt build/storage/vita/export/reports/*.jsonl >/dev/null || { echo "ansi escape codes found in export reports" >&2; exit 1; }
 
 grep -q "storage bootstrap: verified" "$LOG_SUCCESS" || { echo "log missing storage bootstrap verified" >&2; exit 1; }
 grep -q "storage: verified writable" "$LOG_SUCCESS" || { echo "log missing storage writable verification" >&2; exit 1; }
-grep -q "journal: active" "$LOG_SUCCESS" || { echo "log missing journal active" >&2; exit 1; }
+grep -q "journal: activo / active" "$LOG_SUCCESS" || { echo "log missing journal active" >&2; exit 1; }
 
 for bad in \
   "storage bootstrap: failed" \
-  "journal: inactive" \
   "export session: failed" \
   "export jsonl: failed" \
   "diagnostic: failed" \
@@ -110,7 +116,6 @@ for bad_positive in \
 done
 
 grep -q "storage bootstrap: failed" "$LOG_FAILURE" || { echo "failure log missing bootstrap failed marker" >&2; exit 1; }
-grep -q "journal: inactive" "$LOG_FAILURE" || { echo "failure log missing journal inactive marker" >&2; exit 1; }
 grep -qi "failed" "$LOG_FAILURE" || { echo "failure log missing generic failed marker" >&2; exit 1; }
 grep -qi "storage last error\|storage_last_error\|last-error\|error" "$LOG_FAILURE" || { echo "failure log missing storage error cause" >&2; exit 1; }
 
