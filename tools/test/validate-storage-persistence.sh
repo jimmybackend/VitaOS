@@ -37,7 +37,7 @@ CMDS
 printf 'storage sta\t\njournal sum\t\nexport j\t\nshutdown\n' | ./build/hosted/vitaos-hosted > build/test/validate-tab-autocomplete.log 2>&1
 grep -q "Estado de almacenamiento / Storage status:" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for storage status" >&2; exit 1; }
 grep -q "Resumen del journal / Journal summary:" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for journal summary" >&2; exit 1; }
-grep -q "export jsonl: written" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for export jsonl" >&2; exit 1; }
+grep -Eq "export jsonl: written|export session jsonl: written" build/test/validate-tab-autocomplete.log || { echo "tab autocomplete failed for export jsonl" >&2; exit 1; }
 
 required_files=(
   build/storage/vita/tmp/boot-storage-verify.txt
@@ -89,6 +89,8 @@ grep -q '"storage_state":"verified"' build/storage/vita/export/reports/diagnosti
     printf 'storage status\njournal summary\n'
     i=$((i+1))
   done
+  printf 'export jsonl\n'
+  printf 'export session jsonl\n'
   printf 'shutdown\n'
 } | ./build/hosted/vitaos-hosted > build/test/validate-transcript-long.log 2>&1
 LONG_BASE=build/storage/vita/audit/sessions/session-000002.jsonl
@@ -109,6 +111,8 @@ cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_ty
 cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_rotated"' || { echo "missing transcript_rotated event" >&2; exit 1; }
 cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_part_start"' || { echo "missing transcript_part_start event" >&2; exit 1; }
 ! cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_truncated"' || { echo "unexpected transcript_truncated after successful rotation" >&2; exit 1; }
+grep -q 'transcript_jsonl_part_count' build/storage/vita/export/reports/last-session.jsonl || { echo "missing transcript_jsonl_part_count in jsonl report metadata" >&2; exit 1; }
+grep -q '/vita/audit/sessions/session-000002.part-0002.jsonl' build/storage/vita/export/reports/last-session.jsonl || { echo "jsonl report metadata missing rotated part path" >&2; exit 1; }
 prev_seq=-1
 while IFS= read -r line; do
   seq=$(printf '%s\n' "$line" | sed -n 's/.*"seq":\([0-9][0-9]*\).*/\1/p')
