@@ -27,6 +27,7 @@ notes list
 storage read /vita/notes/usb-test.txt
 export session
 export jsonl
+export session jsonl
 diagnostic
 export index
 selftest
@@ -70,6 +71,24 @@ grep -q "Diagnostico" build/storage/vita/export/reports/diagnostic-bundle.txt ||
 grep -q "Resultado" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing resultado heading" >&2; exit 1; }
 grep -q '"boot_id"' build/storage/vita/export/reports/last-session.jsonl || { echo "jsonl missing boot_id key" >&2; exit 1; }
 grep -q '"event_type"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "jsonl missing event_type key" >&2; exit 1; }
+while IFS= read -r line; do
+  [[ "$line" == \{* ]] || { echo "jsonl line does not start with {" >&2; exit 1; }
+  [[ "$line" == *\} ]] || { echo "jsonl line does not end with }" >&2; exit 1; }
+  [[ "$line" == *'"event_type"'* ]] || { echo "jsonl line missing event_type" >&2; exit 1; }
+  [[ "$line" == *'"seq"'* ]] || { echo "jsonl line missing seq" >&2; exit 1; }
+done < build/storage/vita/audit/sessions/session-000001.jsonl
+grep -q "session_end" build/storage/vita/audit/sessions/session-000001.jsonl || grep -q "transcript_truncated" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "transcript missing session_end/truncated marker" >&2; exit 1; }
+grep -q '"storage_state":"verified"' build/storage/vita/export/reports/diagnostic-bundle.jsonl || { echo "diagnostic jsonl did not keep verified storage state" >&2; exit 1; }
+
+cat <<'CMDS' | ./build/hosted/vitaos-hosted > build/test/validate-transcript-long.log 2>&1
+note long.txt
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+.save
+shutdown
+CMDS
+LONG_JSONL=build/storage/vita/audit/sessions/session-000002.jsonl
+[[ -f "$LONG_JSONL" ]] || { echo "missing long transcript jsonl" >&2; exit 1; }
+tail -n 1 "$LONG_JSONL" | grep -Eq '"event_type":"(session_end|transcript_truncated)"' || { echo "long transcript ended with invalid event" >&2; exit 1; }
 if find build/storage/vita/export/reports -type f \( -name '*.txt' -o -name '*.jsonl' \) \
   -exec grep -n $'\033\\[' {} + >/dev/null; then
   echo "ansi escape codes found in export reports" >&2
