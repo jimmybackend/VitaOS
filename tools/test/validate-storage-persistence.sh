@@ -60,6 +60,8 @@ done
 grep -q "session_start" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing session_start in transcript jsonl" >&2; exit 1; }
 grep -q "user_input" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing user_input in transcript jsonl" >&2; exit 1; }
 grep -q "system_output" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing system_output in transcript jsonl" >&2; exit 1; }
+grep -q '\"event_type\":\"system_output\".*Estado de almacenamiento / Storage status:' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing storage status system_output in transcript jsonl" >&2; exit 1; }
+grep -q '\"event_type\":\"system_output\".*Resumen del journal / Journal summary:' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing journal summary system_output in transcript jsonl" >&2; exit 1; }
 grep -q "command_executed" build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing command_executed in transcript jsonl" >&2; exit 1; }
 grep -q '"arch":"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing arch in transcript jsonl" >&2; exit 1; }
 grep -q '"firmware":"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "missing firmware in transcript jsonl" >&2; exit 1; }

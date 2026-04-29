@@ -26,14 +26,15 @@ typedef struct {
     char session_id[64];
     char txt_path[VITA_STORAGE_PATH_MAX];
     char jsonl_path[VITA_STORAGE_PATH_MAX];
-    char txt[8192];
-    char jsonl[8192];
+    char txt[65536];
+    char jsonl[65536];
     char state[32];
     char last_text[160];
     vita_session_identity_t identity;
     unsigned long txt_len;
     unsigned long jsonl_len;
     bool truncated_reported;
+    bool jsonl_locked;
 } st_t;
 
 static st_t g;
@@ -55,6 +56,18 @@ static bool eq(const char *a, const char *b) {
     if (!a || !b) return false;
     while (a[i] && b[i]) { if (a[i] != b[i]) return false; i++; }
     return a[i] == b[i];
+}
+static bool contains(const char *haystack, const char *needle) {
+    unsigned long i = 0;
+    unsigned long j;
+    if (!haystack || !needle || !needle[0]) return false;
+    while (haystack[i]) {
+        j = 0;
+        while (needle[j] && haystack[i + j] == needle[j]) j++;
+        if (!needle[j]) return true;
+        i++;
+    }
+    return false;
 }
 static void ap(char *d, unsigned long c, unsigned long *len, const char *s) {
     unsigned long i = 0;
@@ -103,20 +116,23 @@ static bool append_within_cap(char *dst, unsigned long cap, unsigned long *len, 
 }
 static void report_transcript_truncated_once(void) {
     char seq[7];
+    char jsonl_line[256];
     unsigned long m = 0;
     if (g.truncated_reported) return;
     g.truncated_reported = true;
+    g.jsonl_locked = true;
     g.seq++;
     u6(g.seq, seq);
     ap(g.txt, sizeof(g.txt), &g.txt_len, "[");
     ap(g.txt, sizeof(g.txt), &g.txt_len, seq);
     ap(g.txt, sizeof(g.txt), &g.txt_len, "] transcript_truncated: jsonl capacity reached\n");
     while (seq[m] == '0' && seq[m + 1]) m++;
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "{\"session_id\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.session_id);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"event_type\":\"transcript_truncated\",\"actor\":\"system\",\"text\":\"jsonl capacity reached\",\"seq\":");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, seq + m);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "}\n");
+    cp(jsonl_line, sizeof(jsonl_line), "{\"session_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.session_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"event_type\":\"transcript_truncated\",\"actor\":\"system\",\"text\":\"jsonl capacity reached\",\"seq\":");
+    apc(jsonl_line, sizeof(jsonl_line), seq + m);
+    apc(jsonl_line, sizeof(jsonl_line), "}\n");
+    (void)append_within_cap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, jsonl_line);
 }
 static bool flushv(void) {
     static char a[VITA_STORAGE_READ_MAX], b[VITA_STORAGE_READ_MAX];
@@ -193,8 +209,10 @@ static void event(const char *t, const char *a, const char *x) {
     while (seq[m] == '0' && seq[m + 1]) m++;
     apc(jsonl_line, sizeof(jsonl_line), seq + m);
     apc(jsonl_line, sizeof(jsonl_line), "}\n");
-    if (!append_within_cap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, jsonl_line)) {
-        report_transcript_truncated_once();
+    if (!g.jsonl_locked) {
+        if (!append_within_cap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, jsonl_line)) {
+            report_transcript_truncated_once();
+        }
     }
     if (!flushv()) {
         g.active = false;
@@ -219,6 +237,7 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
     g.busy = false;
     g.error_reported = false;
     g.truncated_reported = false;
+    g.jsonl_locked = false;
     g.seq = 0;
     g.txt_len = 0;
     g.jsonl_len = 0;
@@ -305,6 +324,28 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
     g.active = true;
     cp(g.state, sizeof(g.state), "active");
     event("session_start", "system", "transcript started");
+    if (i > 1U) {
+        char prev_jsonl[VITA_STORAGE_PATH_MAX];
+        char prev_id[32];
+        char prev_num[7];
+        char prev_body[VITA_STORAGE_READ_MAX];
+        u6(i - 1U, prev_num);
+        cp(prev_id, sizeof(prev_id), "session-");
+        apc(prev_id, sizeof(prev_id), prev_num);
+        cp(prev_jsonl, sizeof(prev_jsonl), "/vita/audit/sessions/");
+        apc(prev_jsonl, sizeof(prev_jsonl), prev_id);
+        apc(prev_jsonl, sizeof(prev_jsonl), ".jsonl");
+        if (storage_read_text(prev_jsonl, prev_body, sizeof(prev_body))) {
+            if (!contains(prev_body, "\"event_type\":\"session_end\"") &&
+                !contains(prev_body, "\"event_type\":\"transcript_truncated\"")) {
+                char msg[128];
+                cp(msg, sizeof(msg), "previous_session_id=");
+                apc(msg, sizeof(msg), prev_id);
+                apc(msg, sizeof(msg), " reason=missing_session_end");
+                event("previous_session_unclean", "system", msg);
+            }
+        }
+    }
     return g.active;
 }
 void session_transcript_shutdown(void) {
@@ -329,10 +370,24 @@ void session_transcript_log_journal_status(const char *t) {
     event("journal_status", "system", t ? t : "");
 }
 void session_transcript_log_system_output(const char *t, bool raw) {
+    char clean[256];
+    unsigned long i = 0;
+    unsigned long j = 0;
     if (!t || !t[0]) return;
-    if (raw && eq(g.last_text, t)) return;
-    cp(g.last_text, sizeof(g.last_text), t);
-    event("system_output", "system", t);
+    while (t[i] && j + 1 < sizeof(clean)) {
+        char c = t[i++];
+        if (c == '\033') {
+            while (t[i] && t[i] != 'm' && t[i] != 'H' && t[i] != 'J' && t[i] != 'K') i++;
+            if (t[i]) i++;
+            continue;
+        }
+        clean[j++] = c;
+    }
+    clean[j] = 0;
+    if ((clean[0] == '>' && clean[1] == ' ' && clean[2] == 0) || !clean[0]) return;
+    if (raw && eq(g.last_text, clean)) return;
+    cp(g.last_text, sizeof(g.last_text), clean);
+    event("system_output", "system", clean);
 }
 const char *session_transcript_txt_path(void) {
     return g.txt_path[0] ? g.txt_path : "unknown";
