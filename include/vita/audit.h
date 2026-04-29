@@ -26,5 +26,6 @@ bool audit_verify_current_chain(char *out, unsigned long out_cap);
 bool audit_export_verify_report(const char *txt_path, const char *jsonl_path);
 bool audit_export_current_session_events(const char *txt_path, const char *jsonl_path);
 bool audit_sqlite_summary(char *out, unsigned long out_cap);
+bool audit_get_identity(char *boot_id, unsigned long boot_id_cap, char *node_id, unsigned long node_id_cap);
 
 #endif

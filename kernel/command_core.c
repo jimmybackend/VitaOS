@@ -586,12 +586,28 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
     const char *jsonl_path = "/vita/export/reports/diagnostic-bundle.jsonl";
     const char *txt_ready =
         "diagnostic_bundle: generated\n"
-        "audit_mode: hosted_sqlite_ready\n";
+        "audit_mode: hosted_sqlite_ready\n"
+        "arch: x86_64\n"
+        "firmware: hosted\n"
+        "boot_mode: hosted\n"
+        "boot_id: unknown\n"
+        "node_id: unknown\n"
+        "host_id: unknown\n"
+        "storage_backend: hostfs\n"
+        "storage_state: verified\n";
     const char *txt_limited =
         "diagnostic_bundle: generated\n"
-        "audit_mode: uefi_restricted_diagnostic\n";
-    const char *jsonl_ready = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"hosted_sqlite_ready\"}\n";
-    const char *jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\"}\n";
+        "audit_mode: uefi_restricted_diagnostic\n"
+        "arch: x86_64\n"
+        "firmware: uefi\n"
+        "boot_mode: uefi\n"
+        "boot_id: unknown\n"
+        "node_id: unknown\n"
+        "host_id: unknown\n"
+        "storage_backend: unknown\n"
+        "storage_state: degraded\n";
+    const char *jsonl_ready = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"hosted_sqlite_ready\",\"arch\":\"x86_64\",\"firmware\":\"hosted\",\"boot_mode\":\"hosted\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"hostfs\",\"storage_state\":\"verified\"}\n";
+    const char *jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\",\"arch\":\"x86_64\",\"firmware\":\"uefi\",\"boot_mode\":\"uefi\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"unknown\",\"storage_state\":\"degraded\"}\n";
 
     if (write_report_pair_verified(txt_path,
                           (ctx && ctx->boot_status.audit_ready) ? txt_ready : txt_limited,
