@@ -33,6 +33,7 @@ typedef struct {
     vita_session_identity_t identity;
     unsigned long txt_len;
     unsigned long jsonl_len;
+    bool truncated_reported;
 } st_t;
 
 static st_t g;
@@ -90,6 +91,33 @@ static void mark_transcript_error_once(const char *reason) {
     g.error_reported = true;
     session_journal_log_system("transcript_error", reason);
 }
+static bool append_within_cap(char *dst, unsigned long cap, unsigned long *len, const char *src) {
+    unsigned long i = 0;
+    unsigned long add = 0;
+    if (!dst || !len || !src || cap == 0) return false;
+    while (src[add]) add++;
+    if (*len + add + 1 > cap) return false;
+    while (src[i]) dst[(*len)++] = src[i++];
+    dst[*len] = 0;
+    return true;
+}
+static void report_transcript_truncated_once(void) {
+    char seq[7];
+    unsigned long m = 0;
+    if (g.truncated_reported) return;
+    g.truncated_reported = true;
+    g.seq++;
+    u6(g.seq, seq);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "[");
+    ap(g.txt, sizeof(g.txt), &g.txt_len, seq);
+    ap(g.txt, sizeof(g.txt), &g.txt_len, "] transcript_truncated: jsonl capacity reached\n");
+    while (seq[m] == '0' && seq[m + 1]) m++;
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "{\"session_id\":\"");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.session_id);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"event_type\":\"transcript_truncated\",\"actor\":\"system\",\"text\":\"jsonl capacity reached\",\"seq\":");
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, seq + m);
+    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "}\n");
+}
 static bool flushv(void) {
     static char a[VITA_STORAGE_READ_MAX], b[VITA_STORAGE_READ_MAX];
     if (!storage_write_text(g.txt_path, g.txt) || !storage_write_text(g.jsonl_path, g.jsonl))
@@ -109,7 +137,7 @@ static bool flushv(void) {
  * - If write/read/compare persistence verification fails, transcript enters error/inactive state.
  */
 static void event(const char *t, const char *a, const char *x) {
-    char seq[7], line[256];
+    char seq[7], line[256], jsonl_line[1024];
     unsigned long n = 0, m = 0;
     if (!g.active || g.busy) return;
     g.busy = true;
@@ -123,48 +151,51 @@ static void event(const char *t, const char *a, const char *x) {
     apc(line, sizeof(line), x ? x : "");
     ap(g.txt, sizeof(g.txt), &g.txt_len, line);
     ap(g.txt, sizeof(g.txt), &g.txt_len, "\n");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "{\"session_id\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.session_id);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"boot_id\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.boot_id);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"node_id\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.node_id);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"host_id\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.host_id);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"firmware\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.firmware);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"arch\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.arch);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"boot_mode\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.boot_mode);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"cpu_model\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.cpu_model);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"ram_bytes\":");
+    cp(jsonl_line, sizeof(jsonl_line), "{\"session_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.session_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"boot_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.boot_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"node_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.node_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"host_id\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.host_id);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"firmware\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.firmware);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"arch\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.arch);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"boot_mode\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.boot_mode);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"cpu_model\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.cpu_model);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"ram_bytes\":");
     {
         char ram[32];
         u64_to_dec(g.identity.ram_bytes, ram);
-        ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, ram);
+        apc(jsonl_line, sizeof(jsonl_line), ram);
     }
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, ",\"storage_backend\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.storage_backend);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"storage_state\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, g.identity.storage_state);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"event_type\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, t);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"actor\":\"");
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, a);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"text\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), ",\"storage_backend\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.storage_backend);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"storage_state\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), g.identity.storage_state);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"event_type\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), t);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"actor\":\"");
+    apc(jsonl_line, sizeof(jsonl_line), a);
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"text\":\"");
     if (x) {
         while (x[n] && g.jsonl_len + 1 < sizeof(g.jsonl)) {
             char c = x[n++];
-            if (c == '"') ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\\\"");
-            else { char one[2] = {c, 0}; ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, one); }
+            if (c == '"') apc(jsonl_line, sizeof(jsonl_line), "\\\"");
+            else { char one[2] = {c, 0}; apc(jsonl_line, sizeof(jsonl_line), one); }
         }
     }
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "\",\"seq\":");
+    apc(jsonl_line, sizeof(jsonl_line), "\",\"seq\":");
     while (seq[m] == '0' && seq[m + 1]) m++;
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, seq + m);
-    ap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, "}\n");
+    apc(jsonl_line, sizeof(jsonl_line), seq + m);
+    apc(jsonl_line, sizeof(jsonl_line), "}\n");
+    if (!append_within_cap(g.jsonl, sizeof(g.jsonl), &g.jsonl_len, jsonl_line)) {
+        report_transcript_truncated_once();
+    }
     if (!flushv()) {
         g.active = false;
         cp(g.state, sizeof(g.state), "error");
@@ -187,6 +218,7 @@ bool session_transcript_init(const vita_handoff_t *h, const char *arch) {
     g.active = false;
     g.busy = false;
     g.error_reported = false;
+    g.truncated_reported = false;
     g.seq = 0;
     g.txt_len = 0;
     g.jsonl_len = 0;

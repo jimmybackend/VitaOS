@@ -583,50 +583,25 @@ static void handle_audit_sqlite_summary(const vita_command_context_t *ctx) {
 }
 
 static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
+    vita_storage_status_t st;
+    const char *txt_ready;
+    const char *txt_limited;
+    const char *jsonl_ready;
+    const char *jsonl_limited;
     const char *txt_path = "/vita/export/reports/diagnostic-bundle.txt";
     const char *jsonl_path = "/vita/export/reports/diagnostic-bundle.jsonl";
-    const char *txt_ready =
-        "Diagnostico VitaOS / VitaOS diagnostic\n"
-        "[estado]\n"
-        "diagnostic_bundle: generated\n"
-        "[auditoria]\n"
-        "audit_mode: hosted_sqlite_ready\n"
-        "[almacenamiento]\n"
-        "arch: x86_64\n"
-        "firmware: hosted\n"
-        "boot_mode: hosted\n"
-        "boot_id: unknown\n"
-        "node_id: unknown\n"
-        "host_id: unknown\n"
-        "storage_backend: hostfs\n"
-        "storage_state: verified\n"
-        "[hardware]\n"
-        "hardware_snapshot: available\n"
-        "[limitaciones]\n"
-        "wifi_transport: no implementado\n"
-        "network_remote_ai: no implementado\n";
-    const char *txt_limited =
-        "Diagnostico VitaOS / VitaOS diagnostic\n"
-        "[estado]\n"
-        "diagnostic_bundle: generated\n"
-        "[auditoria]\n"
-        "audit_mode: uefi_restricted_diagnostic\n"
-        "[almacenamiento]\n"
-        "arch: x86_64\n"
-        "firmware: uefi\n"
-        "boot_mode: uefi\n"
-        "boot_id: unknown\n"
-        "node_id: unknown\n"
-        "host_id: unknown\n"
-        "storage_backend: unknown\n"
-        "storage_state: degraded\n"
-        "[hardware]\n"
-        "hardware_snapshot: no disponible\n"
-        "[limitaciones]\n"
-        "wifi_transport: no implementado\n"
-        "network_remote_ai: no implementado\n";
-    const char *jsonl_ready = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"hosted_sqlite_ready\",\"arch\":\"x86_64\",\"firmware\":\"hosted\",\"boot_mode\":\"hosted\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"hostfs\",\"storage_state\":\"verified\"}\n";
-    const char *jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\",\"arch\":\"x86_64\",\"firmware\":\"uefi\",\"boot_mode\":\"uefi\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"unknown\",\"storage_state\":\"degraded\"}\n";
+    storage_get_status(&st);
+    if (st.bootstrap_verified && starts_with(st.backend_name, "uefi_simple_fs")) {
+        txt_ready = "Diagnostico VitaOS / VitaOS diagnostic\n[estado]\ndiagnostic_bundle: generated\n[auditoria]\naudit_mode: hosted_sqlite_ready\n[almacenamiento]\narch: x86_64\nfirmware: hosted\nboot_mode: hosted\nboot_id: unknown\nnode_id: unknown\nhost_id: unknown\nstorage_backend: uefi_simple_fs\nstorage_state: verified\n[hardware]\nhardware_snapshot: available\n[limitaciones]\nwifi_transport: no implementado\nnetwork_remote_ai: no implementado\n";
+        txt_limited = "Diagnostico VitaOS / VitaOS diagnostic\n[estado]\ndiagnostic_bundle: generated\n[auditoria]\naudit_mode: uefi_restricted_diagnostic\n[almacenamiento]\narch: x86_64\nfirmware: uefi\nboot_mode: uefi\nboot_id: unknown\nnode_id: unknown\nhost_id: unknown\nstorage_backend: uefi_simple_fs\nstorage_state: verified\n[hardware]\nhardware_snapshot: no disponible\n[limitaciones]\nwifi_transport: no implementado\nnetwork_remote_ai: no implementado\n";
+        jsonl_ready = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"hosted_sqlite_ready\",\"arch\":\"x86_64\",\"firmware\":\"hosted\",\"boot_mode\":\"hosted\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"uefi_simple_fs\",\"storage_state\":\"verified\"}\n";
+        jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\",\"arch\":\"x86_64\",\"firmware\":\"uefi\",\"boot_mode\":\"uefi\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"uefi_simple_fs\",\"storage_state\":\"verified\"}\n";
+    } else {
+        txt_ready = "Diagnostico VitaOS / VitaOS diagnostic\n[estado]\ndiagnostic_bundle: generated\n[auditoria]\naudit_mode: hosted_sqlite_ready\n[almacenamiento]\narch: x86_64\nfirmware: hosted\nboot_mode: hosted\nboot_id: unknown\nnode_id: unknown\nhost_id: unknown\nstorage_backend: hostfs\nstorage_state: verified\n[hardware]\nhardware_snapshot: available\n[limitaciones]\nwifi_transport: no implementado\nnetwork_remote_ai: no implementado\n";
+        txt_limited = "Diagnostico VitaOS / VitaOS diagnostic\n[estado]\ndiagnostic_bundle: generated\n[auditoria]\naudit_mode: uefi_restricted_diagnostic\n[almacenamiento]\narch: x86_64\nfirmware: uefi\nboot_mode: uefi\nboot_id: unknown\nnode_id: unknown\nhost_id: unknown\nstorage_backend: unknown\nstorage_state: degraded\n[hardware]\nhardware_snapshot: no disponible\n[limitaciones]\nwifi_transport: no implementado\nnetwork_remote_ai: no implementado\n";
+        jsonl_ready = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"hosted_sqlite_ready\",\"arch\":\"x86_64\",\"firmware\":\"hosted\",\"boot_mode\":\"hosted\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"hostfs\",\"storage_state\":\"verified\"}\n";
+        jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\",\"arch\":\"x86_64\",\"firmware\":\"uefi\",\"boot_mode\":\"uefi\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"unknown\",\"storage_state\":\"degraded\"}\n";
+    }
 
     if (write_report_pair_verified(txt_path,
                           (ctx && ctx->boot_status.audit_ready) ? txt_ready : txt_limited,
@@ -829,6 +804,11 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
 
     if (str_eq(cmd, "export session")) {
         (void)session_export_write_report(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+    if (str_eq(cmd, "export session jsonl")) {
+        (void)session_export_write_report(ctx);
+        (void)session_export_write_jsonl(ctx);
         return VITA_COMMAND_CONTINUE;
     }
 
