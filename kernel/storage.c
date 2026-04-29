@@ -1187,18 +1187,21 @@ void storage_get_status(vita_storage_status_t *out_status) {
 }
 
 void storage_show_status(void) {
-    console_write_line("Storage / Almacenamiento:");
+    console_write_line("Estado de almacenamiento / Storage status:");
     console_write_line(g_storage.initialized ? "initialized: yes" : "initialized: no");
     console_write_line(g_storage.writable ? "writable: yes" : "writable: no");
     console_write_line(g_storage.bootstrap_attempted ? "bootstrap_attempted: yes" : "bootstrap_attempted: no");
-    console_write_line(g_storage.bootstrap_verified ? "storage: verified writable" : "storage: unavailable or unverified");
-    console_write_line(g_storage.bootstrap_verified ? "storage bootstrap: verified" : "storage bootstrap: failed");
+    console_write_line(g_storage.bootstrap_verified ? "storage: verified writable / almacenamiento verificado escribible" : "storage: unavailable or unverified / almacenamiento no disponible o no verificado");
+    console_write_line(g_storage.bootstrap_verified ? "storage bootstrap: verified / bootstrap verificado" : "storage bootstrap: failed / bootstrap fallido");
     console_write_line("backend:");
     console_write_line(g_storage.backend_name[0] ? g_storage.backend_name : "none");
     console_write_line("root_hint:");
     console_write_line(g_storage.root_hint[0] ? g_storage.root_hint : "/vita");
     console_write_line("last_error:");
     console_write_line(g_storage.last_error[0] ? g_storage.last_error : "none");
+    if (!g_storage.bootstrap_verified) {
+        console_write_line("Estado degradado: el almacenamiento no esta verificado; revisar last_error y root_hint.");
+    }
     console_write_line("Commands / Comandos:");
     console_write_line("storage status");
     console_write_line("storage test");

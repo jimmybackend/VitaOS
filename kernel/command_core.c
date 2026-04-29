@@ -586,8 +586,12 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
     const char *txt_path = "/vita/export/reports/diagnostic-bundle.txt";
     const char *jsonl_path = "/vita/export/reports/diagnostic-bundle.jsonl";
     const char *txt_ready =
+        "Diagnostico VitaOS / VitaOS diagnostic\n"
+        "[estado]\n"
         "diagnostic_bundle: generated\n"
+        "[auditoria]\n"
         "audit_mode: hosted_sqlite_ready\n"
+        "[almacenamiento]\n"
         "arch: x86_64\n"
         "firmware: hosted\n"
         "boot_mode: hosted\n"
@@ -595,10 +599,19 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
         "node_id: unknown\n"
         "host_id: unknown\n"
         "storage_backend: hostfs\n"
-        "storage_state: verified\n";
+        "storage_state: verified\n"
+        "[hardware]\n"
+        "hardware_snapshot: available\n"
+        "[limitaciones]\n"
+        "wifi_transport: no implementado\n"
+        "network_remote_ai: no implementado\n";
     const char *txt_limited =
+        "Diagnostico VitaOS / VitaOS diagnostic\n"
+        "[estado]\n"
         "diagnostic_bundle: generated\n"
+        "[auditoria]\n"
         "audit_mode: uefi_restricted_diagnostic\n"
+        "[almacenamiento]\n"
         "arch: x86_64\n"
         "firmware: uefi\n"
         "boot_mode: uefi\n"
@@ -606,7 +619,12 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
         "node_id: unknown\n"
         "host_id: unknown\n"
         "storage_backend: unknown\n"
-        "storage_state: degraded\n";
+        "storage_state: degraded\n"
+        "[hardware]\n"
+        "hardware_snapshot: no disponible\n"
+        "[limitaciones]\n"
+        "wifi_transport: no implementado\n"
+        "network_remote_ai: no implementado\n";
     const char *jsonl_ready = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"hosted_sqlite_ready\",\"arch\":\"x86_64\",\"firmware\":\"hosted\",\"boot_mode\":\"hosted\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"hostfs\",\"storage_state\":\"verified\"}\n";
     const char *jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\",\"arch\":\"x86_64\",\"firmware\":\"uefi\",\"boot_mode\":\"uefi\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"unknown\",\"storage_state\":\"degraded\"}\n";
 
@@ -650,13 +668,17 @@ static void handle_selftest(const vita_command_context_t *ctx) {
     const char *txt_path = "/vita/export/reports/self-test.txt";
     const char *jsonl_path = "/vita/export/reports/self-test.jsonl";
     const char *txt_pass =
-        "self_test: PASS\n"
-        "console: PASS\n"
-        "audit: PASS (hosted sqlite)\n";
+        "Resultado: PASS/WARN/FAIL -> PASS\n"
+        "Consola: PASS\n"
+        "Auditoria: PASS (hosted sqlite)\n"
+        "Almacenamiento: PASS (verified writable)\n"
+        "Limitaciones: no implementado wifi/network remoto\n";
     const char *txt_warn =
-        "self_test: WARN\n"
-        "console: PASS\n"
-        "audit: WARN (uefi restricted diagnostic)\n";
+        "Resultado: PASS/WARN/FAIL -> WARN\n"
+        "Consola: PASS\n"
+        "Auditoria: WARN (uefi restricted diagnostic)\n"
+        "Almacenamiento: WARN (degraded o no verificado)\n"
+        "Limitaciones: no implementado wifi/network remoto\n";
     const char *jsonl_pass = "{\"type\":\"self_test\",\"status\":\"pass\",\"audit\":\"hosted\"}\n";
     const char *jsonl_warn = "{\"type\":\"self_test\",\"status\":\"warn\",\"audit\":\"restricted\"}\n";
 

@@ -449,8 +449,8 @@ void session_journal_show_status(void) {
 
     u32_to_dec(g_journal.seq, seq);
 
-    console_write_line("Journal / Bitacora:");
-    console_write_line(g_journal.active ? "journal: active" : "journal: inactive");
+    console_write_line("Resumen del journal / Journal summary:");
+    console_write_line(g_journal.active ? "journal: activo / active" : "journal: inactivo / inactive");
     console_write_line(g_journal.initialized ? "initialized: yes" : "initialized: no");
     console_write_line(g_journal.active ? "active: yes" : "active: no");
     console_write_line(g_journal.last_flush_ok ? "last_flush: ok" : "last_flush: not-ok");
