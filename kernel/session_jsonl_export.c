@@ -27,7 +27,7 @@ typedef struct {
 } jsonl_builder_t;
 
 static char g_session_jsonl_buffer[SESSION_JSONL_EXPORT_BUFFER_MAX];
-static char g_session_jsonl_readback[VITA_STORAGE_READ_MAX];
+static char g_session_jsonl_readback[SESSION_JSONL_EXPORT_BUFFER_MAX];
 
 static const char *safe_text(const char *text, const char *fallback) {
     if (text && text[0]) {
