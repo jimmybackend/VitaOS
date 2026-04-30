@@ -397,6 +397,60 @@ static void show_audit(const vita_command_context_t *ctx) {
     }
 }
 
+static void show_status_vitair_summary(const vita_command_context_t *ctx) {
+    static const char *k_summary_claims[] = {
+        "storage.persistent.writable",
+        "audit.journal_jsonl.available",
+        "audit.sqlite.available",
+        "operational.restricted",
+        "operational.full"
+    };
+    vita_audit_runtime_status_t rt;
+    vita_ir_claim_t claims[VITA_IR_AUDIT_CLAIM_MAX];
+    size_t claim_count;
+    size_t i;
+
+    resolve_audit_runtime_status(ctx, &rt);
+    claim_count = vita_ir_claims_from_audit_runtime(&rt, claims, VITA_IR_AUDIT_CLAIM_MAX);
+
+    if (claim_count == 0U) {
+        console_write_line("VitaIR-Tri status summary: unavailable");
+        return;
+    }
+
+    console_write_line("VitaIR-Tri status summary:");
+    for (i = 0; i < (sizeof(k_summary_claims) / sizeof(k_summary_claims[0])); ++i) {
+        const char *target_claim = k_summary_claims[i];
+        size_t j;
+
+        for (j = 0; j < claim_count; ++j) {
+            if (str_eq(claims[j].claim, target_claim)) {
+                char line[160];
+                size_t pos = 0U;
+                const char *symbol = vita_tri_to_symbol(claims[j].state);
+                const char *severity = vita_ir_severity_to_string(claims[j].severity);
+
+                if (!symbol || !symbol[0]) {
+                    symbol = "0";
+                }
+                if (!severity || !severity[0]) {
+                    severity = "warn";
+                }
+
+                line[0] = '\0';
+                append_text(line, sizeof(line), &pos, "- ");
+                append_text(line, sizeof(line), &pos, target_claim);
+                append_text(line, sizeof(line), &pos, ": ");
+                append_text(line, sizeof(line), &pos, symbol);
+                append_text(line, sizeof(line), &pos, " ");
+                append_text(line, sizeof(line), &pos, severity);
+                console_write_line(line);
+                break;
+            }
+        }
+    }
+}
+
 static void show_peers(const vita_command_context_t *ctx) {
     if (ctx && ctx->node_ready) {
         node_core_show_peers();
@@ -938,6 +992,7 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
     if (str_eq(cmd, "status")) {
         audit_emit_boot_event("COMMAND_STATUS", "status");
         console_guided_show_status(&ctx->console_state);
+        show_status_vitair_summary(ctx);
         return VITA_COMMAND_CONTINUE;
     }
 
