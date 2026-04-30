@@ -48,7 +48,8 @@ COMMON_KERNEL := \
 	kernel/power.c \
 	kernel/net_status.c \
 	kernel/net_connect.c \
-	kernel/vitair.c
+	kernel/vitair.c \
+	kernel/vitair_audit.c
 
 EFI_SOURCES := \
 	arch/x86_64/boot/uefi_entry.c \

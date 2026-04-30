@@ -82,11 +82,11 @@ The current base code introduces these VitaIR-Tri foundational C types:
 - `vita_ir_severity_t`
 - `vita_ir_claim_t`
 
-This baseline only defines types and conversion/validation helpers. It does not yet wire runtime claim emission, storage persistence, audit export integration, selftest wiring, or diagnostic command behavior changes.
+This baseline defines types and conversion/validation helpers, and now includes audit-runtime to VitaIR-Tri claim mapping in C. It does not yet wire runtime export persistence, audit export integration, selftest wiring, or diagnostic command behavior changes.
 
 ## Current limits (this milestone)
 
-- Concept/documentation phase only.
+- Runtime export integration is not implemented yet.
 - No kernel behavior changes.
 - No storage behavior changes.
 - No schema changes.
