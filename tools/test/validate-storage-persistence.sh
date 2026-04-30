@@ -87,7 +87,7 @@ grep -q '"storage_state":"verified"' build/storage/vita/export/reports/diagnosti
 {
   printf 'help\n'
   i=0
-  while [[ $i -lt 260 ]]; do
+  while [[ $i -lt 280 ]]; do
     printf 'storage status\njournal summary\n'
     i=$((i+1))
   done
@@ -111,6 +111,36 @@ while IFS= read -r base_jsonl; do
     LONG_PART_COUNT=$candidate_part_count
   fi
 done < <(find build/storage/vita/audit/sessions -maxdepth 1 -type f -name 'session-*.jsonl' ! -name 'session-*.part-*.jsonl' | sort)
+if [[ -z "$LONG_BASE" || -z "$LONG_PART2" ]]; then
+  {
+    i=0
+    while [[ $i -lt 140 ]]; do
+      printf 'storage status\njournal summary\n'
+      i=$((i+1))
+    done
+    printf 'export jsonl\n'
+    printf 'export session jsonl\n'
+    printf 'shutdown\n'
+  } | ./build/hosted/vitaos-hosted >> build/test/validate-transcript-long.log 2>&1
+
+  LONG_BASE=
+  LONG_PART2=
+  LONG_GLOB=
+  LONG_PART_COUNT=0
+  while IFS= read -r base_jsonl; do
+    base_no_ext=${base_jsonl%.jsonl}
+    candidate_part2="${base_no_ext}.part-0002.jsonl"
+    [[ -f "$candidate_part2" ]] || continue
+    candidate_part_count=$(find build/storage/vita/audit/sessions -maxdepth 1 -type f -name "$(basename "$base_no_ext").part-*.jsonl" | wc -l)
+    if [[ "$candidate_part_count" -gt "$LONG_PART_COUNT" ]]; then
+      LONG_BASE="$base_jsonl"
+      LONG_PART2="$candidate_part2"
+      LONG_GLOB="${base_no_ext}"'*.jsonl'
+      LONG_PART_COUNT=$candidate_part_count
+    fi
+  done < <(find build/storage/vita/audit/sessions -maxdepth 1 -type f -name 'session-*.jsonl' ! -name 'session-*.part-*.jsonl' | sort)
+fi
+
 [[ -f "$LONG_BASE" ]] || { echo "missing long transcript base jsonl" >&2; exit 1; }
 [[ -f "$LONG_PART2" ]] || { echo "missing long transcript part-0002 jsonl" >&2; exit 1; }
 while IFS= read -r jf; do
