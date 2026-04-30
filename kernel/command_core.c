@@ -15,6 +15,8 @@
 #include <vita/session_transcript.h>
 #include <vita/proposal.h>
 #include <vita/console_autocomplete.h>
+#include <vita/vitair.h>
+#include <vita/vitair_audit.h>
 
 #ifdef VITA_HOSTED
 #include <sqlite3.h>
@@ -147,6 +149,22 @@ static void u64_to_dec(uint64_t v, char out[32]) {
     }
 
     out[j] = '\0';
+}
+
+static void append_text(char *dst, size_t cap, size_t *len, const char *src) {
+    size_t i = 0;
+
+    if (!dst || !len || !src || cap == 0U) {
+        return;
+    }
+
+    while (src[i] && *len + 1U < cap) {
+        dst[*len] = src[i];
+        *len = *len + 1U;
+        i++;
+    }
+
+    dst[*len] = '\0';
 }
 
 static void console_write_i32(const char *label, int value) {
@@ -314,6 +332,9 @@ static void show_hw(const vita_command_context_t *ctx) {
 
 static void show_audit(const vita_command_context_t *ctx) {
     vita_audit_runtime_status_t rt;
+    vita_ir_claim_t claims[VITA_IR_AUDIT_CLAIM_MAX];
+    size_t claim_count;
+    size_t i;
 
     console_write_line("Audit / Auditoria:");
     resolve_audit_runtime_status(ctx, &rt);
@@ -332,18 +353,48 @@ static void show_audit(const vita_command_context_t *ctx) {
         console_write_line(rt.journal_jsonl_status == VITA_STATUS_OK
             ? "audit persistence: journal/jsonl active; sqlite hosted ready"
             : "audit persistence: sqlite hosted ready; journal inactive");
+    } else {
+        console_write_line(rt.journal_jsonl_status == VITA_STATUS_OK
+            ? "audit persistence: journal/jsonl active (restricted mode)"
+            : "audit persistence: restricted diagnostic");
+        console_write_line("Restricted diagnostic mode is active.");
+        console_write_line("Modo diagnostico restringido activo.");
+        console_write_line("storage_writable:");
+        console_write_line(rt.persistent_storage_writable ? "true" : "false");
+        console_write_line("UEFI physical boot can still run local console commands, but it must not claim full operational mode until persistent audit exists.");
+        console_write_line("En UEFI fisico puedes usar comandos locales, pero el modo operativo completo requiere auditoria persistente.");
+    }
+
+    claim_count = vita_ir_claims_from_audit_runtime(&rt, claims, VITA_IR_AUDIT_CLAIM_MAX);
+    if (claim_count == 0U) {
+        console_write_line("VitaIR-Tri runtime claims: unavailable");
         return;
     }
 
-    console_write_line(rt.journal_jsonl_status == VITA_STATUS_OK
-        ? "audit persistence: journal/jsonl active (restricted mode)"
-        : "audit persistence: restricted diagnostic");
-    console_write_line("Restricted diagnostic mode is active.");
-    console_write_line("Modo diagnostico restringido activo.");
-    console_write_line("storage_writable:");
-    console_write_line(rt.persistent_storage_writable ? "true" : "false");
-    console_write_line("UEFI physical boot can still run local console commands, but it must not claim full operational mode until persistent audit exists.");
-    console_write_line("En UEFI fisico puedes usar comandos locales, pero el modo operativo completo requiere auditoria persistente.");
+    console_write_line("VitaIR-Tri runtime claims:");
+    for (i = 0; i < claim_count; ++i) {
+        char line[160];
+        size_t pos = 0U;
+        const char *claim = (claims[i].claim && claims[i].claim[0]) ? claims[i].claim : "unknown.claim";
+        const char *symbol = vita_tri_to_symbol(claims[i].state);
+        const char *severity = vita_ir_severity_to_string(claims[i].severity);
+
+        if (!symbol || !symbol[0]) {
+            symbol = "0";
+        }
+        if (!severity || !severity[0]) {
+            severity = "warn";
+        }
+
+        line[0] = '\0';
+        append_text(line, sizeof(line), &pos, "- ");
+        append_text(line, sizeof(line), &pos, claim);
+        append_text(line, sizeof(line), &pos, ": ");
+        append_text(line, sizeof(line), &pos, symbol);
+        append_text(line, sizeof(line), &pos, " ");
+        append_text(line, sizeof(line), &pos, severity);
+        console_write_line(line);
+    }
 }
 
 static void show_peers(const vita_command_context_t *ctx) {
