@@ -180,3 +180,12 @@ Optimize for:
 
 - `/vita` must be prepared automatically during boot (hosted + UEFI) without requiring manual `storage repair`.
 - Do not report `storage verified`, `journal active`, `saved`, `written` or `audit ready` style claims unless write->read->compare (or equivalent verified read-back) actually succeeded.
+
+
+## VitaIR-Tri claims discipline
+
+- VitaIR-Tri claims must follow the audit-first model.
+- Claims must not invent capabilities that are not implemented.
+- Claims must not persist secrets.
+- Claims must not contain ANSI escape sequences.
+- Claims must not assert full network/AWS operation, full UEFI SQLite persistent availability, or complete local AI autonomy unless implemented and validated.
