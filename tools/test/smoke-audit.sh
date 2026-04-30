@@ -240,6 +240,18 @@ if ! grep -q "display_count:" "$LOG_FILE"; then
   exit 1
 fi
 
+for marker in \
+  "VitaIR-Tri runtime claims:" \
+  "storage.persistent.writable" \
+  "audit.journal_jsonl.available" \
+  "audit.sqlite.available" \
+  "operational.full"; do
+  if ! grep -q "$marker" "$LOG_FILE"; then
+    echo "smoke failed: VitaIR marker not found in hosted log: $marker" >&2
+    exit 1
+  fi
+done
+
 prev=""
 expected_seq=1
 while IFS=$'\t' read -r boot_id seq etype sev actor summary details mono prev_hash event_hash; do
