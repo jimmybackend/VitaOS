@@ -725,6 +725,9 @@ static void handle_export_index(void) {
 
 static void handle_selftest(const vita_command_context_t *ctx) {
     vita_audit_runtime_status_t rt;
+    vita_ir_claim_t claims[VITA_IR_AUDIT_CLAIM_MAX];
+    size_t claim_count;
+    size_t i;
     const char *txt_path = "/vita/export/reports/self-test.txt";
     const char *jsonl_path = "/vita/export/reports/self-test.jsonl";
     const char *txt_pass =
@@ -753,12 +756,76 @@ static void handle_selftest(const vita_command_context_t *ctx) {
         "Limitaciones: no implementado wifi/network remoto\n";
     const char *jsonl_pass = "{\"type\":\"self_test\",\"status\":\"pass\",\"audit\":\"hosted\"}\n";
     const char *jsonl_warn = "{\"type\":\"self_test\",\"status\":\"warn\",\"audit\":\"restricted\",\"sqlite_status\":\"unavailable\"}\n";
-    resolve_audit_runtime_status(ctx, &rt);
+    static char txt_report[4096];
+    static char jsonl_report[4096];
+    size_t txt_len = 0U;
+    size_t jsonl_len = 0U;
 
-    if (write_report_pair_verified(txt_path,
-                          (ctx && ctx->boot_status.audit_ready) ? txt_pass : (rt.storage_status == VITA_STATUS_OK ? txt_warn_storage_ok : txt_warn_storage_degraded),
-                          jsonl_path,
-                          (ctx && ctx->boot_status.audit_ready) ? jsonl_pass : jsonl_warn)) {
+    resolve_audit_runtime_status(ctx, &rt);
+    claim_count = vita_ir_claims_from_audit_runtime(&rt, claims, VITA_IR_AUDIT_CLAIM_MAX);
+
+    append_text(txt_report, sizeof(txt_report), &txt_len,
+                (ctx && ctx->boot_status.audit_ready) ? txt_pass : (rt.storage_status == VITA_STATUS_OK ? txt_warn_storage_ok : txt_warn_storage_degraded));
+    append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len,
+                (ctx && ctx->boot_status.audit_ready) ? jsonl_pass : jsonl_warn);
+
+    if (claim_count == 0U) {
+        append_text(txt_report, sizeof(txt_report), &txt_len, "VitaIR-Tri runtime claims: unavailable\n");
+        append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len,
+                    "{\"type\":\"vitair_claims\",\"status\":\"unavailable\"}\n");
+    } else {
+        append_text(txt_report, sizeof(txt_report), &txt_len, "VitaIR-Tri runtime claims:\n");
+
+        for (i = 0; i < claim_count; ++i) {
+            char txt_line[192];
+            char jsonl_line[256];
+            size_t txt_line_len = 0U;
+            size_t jsonl_line_len = 0U;
+            const char *claim = (claims[i].claim && claims[i].claim[0]) ? claims[i].claim : "unknown.claim";
+            const char *symbol = vita_tri_to_symbol(claims[i].state);
+            const char *state_num = vita_tri_to_json_number(claims[i].state);
+            const char *severity = vita_ir_severity_to_string(claims[i].severity);
+
+            if (!symbol || !symbol[0]) {
+                symbol = "0";
+            }
+            if (!state_num || !state_num[0]) {
+                state_num = "0";
+            }
+            if (!severity || !severity[0]) {
+                severity = "warn";
+            }
+
+            txt_line[0] = '\0';
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, "- ");
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, claim);
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, ": ");
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, symbol);
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, " ");
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, severity);
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, "\n");
+            append_text(txt_report, sizeof(txt_report), &txt_len, txt_line);
+
+            jsonl_line[0] = '\0';
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "{\"type\":\"vitair_claim\",\"ir_version\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, VITA_IR_VERSION);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"claim\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, claim);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"state\":");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, state_num);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        ",\"severity\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, severity);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\"}\n");
+            append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len, jsonl_line);
+        }
+    }
+
+    if (write_report_pair_verified(txt_path, txt_report, jsonl_path, jsonl_report)) {
         console_write_line("selftest: written");
         return;
     }
