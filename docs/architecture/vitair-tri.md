@@ -57,8 +57,8 @@ This means SQLite is unavailable, while other subsystems (such as storage or JSO
 VitaIR-Tri is designed to be exported as JSONL in future phases.
 
 ```json
-{"ir_version":"vitair-tri/0.1","claim":"storage.writable","state":+1,"severity":"info","actor":"storage","target":"/vita","meaning":"persistent storage writable","effect":"normal"}
-{"ir_version":"vitair-tri/0.1","claim":"journal.jsonl.active","state":+1,"severity":"info","actor":"audit.journal","target":"/vita/audit/session-journal.jsonl","meaning":"JSONL journal active","effect":"audit stream available"}
+{"ir_version":"vitair-tri/0.1","claim":"storage.writable","state":1,"severity":"info","actor":"storage","target":"/vita","meaning":"persistent storage writable","effect":"normal"}
+{"ir_version":"vitair-tri/0.1","claim":"journal.jsonl.active","state":1,"severity":"info","actor":"audit.journal","target":"/vita/audit/session-journal.jsonl","meaning":"JSONL journal active","effect":"audit stream available"}
 {"ir_version":"vitair-tri/0.1","claim":"audit.sqlite.available","state":-1,"severity":"warn","actor":"audit.sqlite","target":"/vita/audit/audit.db","meaning":"SQLite backend unavailable in this path","effect":"hosted/UEFI feature split"}
 ```
 
@@ -73,6 +73,16 @@ VitaIR-Tri is designed to be exported as JSONL in future phases.
 - VitaIR-Tri does **not** replace SQLite.
 - SQLite schema and tables remain authoritative when SQLite backend is available.
 - VitaIR-Tri can coexist with SQLite by describing availability and state claims, including partial-path limitations.
+
+## Code baseline (PR 2)
+
+The current base code introduces these VitaIR-Tri foundational C types:
+
+- `vita_tri_t`
+- `vita_ir_severity_t`
+- `vita_ir_claim_t`
+
+This baseline only defines types and conversion/validation helpers. It does not yet wire runtime claim emission, storage persistence, audit export integration, selftest wiring, or diagnostic command behavior changes.
 
 ## Current limits (this milestone)
 
