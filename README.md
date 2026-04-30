@@ -250,6 +250,25 @@ Rutas principales:
 
 ---
 
+
+## VitaIR-Tri: internal ternary representation
+
+VitaOS define **VitaIR-Tri** como una representación interna textual y auditable para expresar *claims* de estado con semántica ternaria (`-1`, `0`, `+1`).
+
+¿Por qué existe?
+
+- Para unificar estados operativos de forma simple y verificable por humanos.
+- Para preparar consumo futuro en status/audit/selftest/export sin romper el flujo actual.
+- Para mantener separación clara entre **estado** (ternario) y **severidad** (`info/warn/error/critical`).
+
+Límites explícitos:
+
+- **No** reemplaza SQLite ni el roadmap de auditoría SQLite.
+- **No** reemplaza el audit log TXT/JSONL actual.
+- **No** es BitNet, no es un LLM y no implica IA local completa implementada.
+
+Su adopción será gradual y honesta, empezando por documentación y posterior uso incremental en status/audit/selftest/export.
+
 ## Validadores y checks
 
 Comandos de validación usados en el flujo actual:
