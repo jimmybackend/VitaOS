@@ -707,6 +707,7 @@ static void handle_export_index(void) {
     APPEND_LINE("/vita/export/reports/diagnostic-bundle.jsonl");
     APPEND_LINE("/vita/export/reports/self-test.txt");
     APPEND_LINE("/vita/export/reports/self-test.jsonl");
+    APPEND_LINE("/vita/export/reports/vitair-state.jsonl");
     APPEND_LINE("/vita/export/audit/audit-verify.txt");
     APPEND_LINE("/vita/export/audit/audit-verify.jsonl");
     APPEND_LINE("/vita/export/audit/current-session-events.txt");
@@ -721,6 +722,81 @@ static void handle_export_index(void) {
     }
 
     console_write_line("export index: failed");
+}
+
+static void handle_export_vitair(const vita_command_context_t *ctx) {
+    vita_audit_runtime_status_t rt;
+    vita_ir_claim_t claims[VITA_IR_AUDIT_CLAIM_MAX];
+    size_t claim_count;
+    size_t i;
+    const char *jsonl_path = "/vita/export/reports/vitair-state.jsonl";
+    static char jsonl_report[4096];
+    size_t jsonl_len = 0U;
+
+    resolve_audit_runtime_status(ctx, &rt);
+    claim_count = vita_ir_claims_from_audit_runtime(&rt, claims, VITA_IR_AUDIT_CLAIM_MAX);
+
+    if (claim_count == 0U) {
+        append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len,
+                    "{\"type\":\"vitair_claims\",\"ir_version\":\"" VITA_IR_VERSION "\",\"status\":\"unavailable\"}\n");
+    } else {
+        for (i = 0; i < claim_count; ++i) {
+            char jsonl_line[384];
+            size_t jsonl_line_len = 0U;
+            const char *claim = safe_text(claims[i].claim, "unknown.claim");
+            const char *state_num = vita_tri_to_json_number(claims[i].state);
+            const char *severity = vita_ir_severity_to_string(claims[i].severity);
+            const char *actor = safe_text(claims[i].actor, "unknown");
+            const char *target = safe_text(claims[i].target, "unknown");
+            const char *meaning = safe_text(claims[i].meaning, "unknown");
+            const char *effect = safe_text(claims[i].effect, "unknown");
+
+            if (!state_num || !state_num[0]) {
+                state_num = "0";
+            }
+            if (!severity || !severity[0]) {
+                severity = "warn";
+            }
+
+            jsonl_line[0] = '\0';
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "{\"type\":\"vitair_claim\",\"ir_version\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, VITA_IR_VERSION);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"claim\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, claim);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"state\":");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, state_num);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        ",\"severity\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, severity);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"actor\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, actor);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"target\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, target);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"meaning\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, meaning);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"effect\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, effect);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\"}\n");
+
+            append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len, jsonl_line);
+        }
+    }
+
+    if (write_report_verified(jsonl_path, jsonl_report)) {
+        console_write_line("export vitair: written");
+        console_write_line(jsonl_path);
+        return;
+    }
+
+    console_write_line("export vitair: failed");
 }
 
 static void handle_selftest(const vita_command_context_t *ctx) {
@@ -979,6 +1055,11 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
 
     if (str_eq(cmd, "export jsonl")) {
         (void)session_export_write_jsonl(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "export vitair") || str_eq(cmd, "export vitair-state")) {
+        handle_export_vitair(ctx);
         return VITA_COMMAND_CONTINUE;
     }
 
