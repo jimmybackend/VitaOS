@@ -323,7 +323,13 @@ void console_banner(const vita_boot_status_t *status) {
     }
 
     if (status && status->console_ready) { console_write_ok("Console: OK"); } else { console_write_warning("Console: MISSING"); }
-    if (status && status->audit_ready) { console_write_ok("Audit: READY"); } else { console_write_error("Audit: FAILED"); }
+    if (status && status->audit_ready) {
+        console_write_ok("Audit journal: OK");
+        console_write_ok("Audit SQLite: READY");
+    } else {
+        console_write_ok("Audit journal: OK/WARN (depends on storage+journal runtime)");
+        console_write_warning("Audit SQLite: UNAVAILABLE");
+    }
 }
 
 void console_guided_show_welcome(const vita_console_state_t *state) {
@@ -331,9 +337,10 @@ void console_guided_show_welcome(const vita_console_state_t *state) {
     console_write_line("");
     console_write_line("Status / Estado:");
     console_write_line("- Boot: OK");
+    console_write_line("- Audit journal TXT/JSONL: runtime-check / verificacion en tiempo real");
     console_write_line((state && state->audit_ready)
         ? "- Audit SQLite: READY / Auditoria SQLite: LISTA"
-        : "- Audit SQLite: FAILED / Auditoria SQLite: FALLA");
+        : "- Audit SQLite: UNAVAILABLE / Auditoria SQLite: NO DISPONIBLE");
     console_write_line((state && state->console_ready)
         ? "- Guided console: READY / Consola guiada: LISTA"
         : "- Guided console: OFFLINE / Consola guiada: FUERA DE LINEA");

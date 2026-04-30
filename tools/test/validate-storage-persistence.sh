@@ -71,6 +71,8 @@ grep -q '"storage_backend":"' build/storage/vita/audit/sessions/session-000001.j
 grep -q "Resumen de sesion VitaOS" build/storage/vita/export/reports/last-session.txt || { echo "last-session.txt missing spanish summary heading" >&2; exit 1; }
 grep -q "Diagnostico" build/storage/vita/export/reports/diagnostic-bundle.txt || { echo "diagnostic-bundle.txt missing diagnostico heading" >&2; exit 1; }
 grep -q "Resultado" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing resultado heading" >&2; exit 1; }
+grep -q "Audit journal TXT/JSONL: OK" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing separated journal status" >&2; exit 1; }
+grep -q "Audit SQLite: OK" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing separated sqlite status for hosted pass case" >&2; exit 1; }
 grep -q '"boot_id"' build/storage/vita/export/reports/last-session.jsonl || { echo "jsonl missing boot_id key" >&2; exit 1; }
 grep -q '"event_type"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "jsonl missing event_type key" >&2; exit 1; }
 while IFS= read -r line; do
@@ -173,6 +175,13 @@ for bad in \
   "selftest: failed"; do
   ! grep -q "$bad" "$LOG_SUCCESS" || { echo "unexpected failure marker in success log: $bad" >&2; exit 1; }
 done
+
+if grep -q "/vita/export/audit/audit-verify.txt" build/storage/vita/export/export-index.txt; then
+  [[ -f build/storage/vita/export/audit/audit-verify.txt ]] || { echo "export-index lists missing audit-verify.txt" >&2; exit 1; }
+fi
+if grep -q "/vita/export/audit/current-session-events.txt" build/storage/vita/export/export-index.txt; then
+  [[ -f build/storage/vita/export/audit/current-session-events.txt ]] || { echo "export-index lists missing current-session-events.txt" >&2; exit 1; }
+fi
 
 rm -rf build/storage
 printf 'not-a-dir' > build/storage

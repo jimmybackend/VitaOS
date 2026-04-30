@@ -157,6 +157,21 @@ static void console_write_i32(const char *label, int value) {
     console_write_line(num);
 }
 
+static void resolve_audit_runtime_status(const vita_command_context_t *ctx, vita_audit_runtime_status_t *out) {
+    vita_storage_status_t st;
+    bool journal_active = session_journal_is_active();
+    storage_get_status(&st);
+    mem_zero(out, sizeof(*out));
+    out->persistent_storage_writable = st.bootstrap_verified && st.writable;
+    out->restricted_mode = !(ctx && ctx->boot_status.audit_ready);
+    out->storage_status = st.bootstrap_verified ? VITA_STATUS_OK : (st.bootstrap_attempted ? VITA_STATUS_WARN : VITA_STATUS_FAIL);
+    out->journal_txt_status = journal_active ? VITA_STATUS_OK : VITA_STATUS_WARN;
+    out->journal_jsonl_status = journal_active ? VITA_STATUS_OK : VITA_STATUS_WARN;
+    out->transcript_txt_status = journal_active ? VITA_STATUS_OK : VITA_STATUS_WARN;
+    out->transcript_jsonl_status = journal_active ? VITA_STATUS_OK : VITA_STATUS_WARN;
+    out->sqlite_status = (ctx && ctx->boot_status.audit_ready) ? VITA_STATUS_OK : VITA_STATUS_UNAVAILABLE;
+}
+
 static void command_refresh_state(vita_command_context_t *ctx) {
     if (!ctx) {
         return;
@@ -298,29 +313,35 @@ static void show_hw(const vita_command_context_t *ctx) {
 }
 
 static void show_audit(const vita_command_context_t *ctx) {
-    vita_storage_status_t st;
+    vita_audit_runtime_status_t rt;
 
     console_write_line("Audit / Auditoria:");
-    storage_get_status(&st);
-
-    if (ctx && ctx->boot_status.audit_ready) {
+    resolve_audit_runtime_status(ctx, &rt);
+    console_write_line(rt.journal_jsonl_status == VITA_STATUS_OK
+        ? "Audit journal TXT/JSONL: OK"
+        : "Audit journal TXT/JSONL: WARN");
+    if (rt.sqlite_status == VITA_STATUS_OK) {
         console_write_line("Audit SQLite: READY / Auditoria SQLite: LISTA");
+    } else {
+        console_write_line("Audit SQLite: UNAVAILABLE / Auditoria SQLite: NO DISPONIBLE");
+    }
+
+    if (rt.sqlite_status == VITA_STATUS_OK) {
         console_write_line("Persistent audit backend is active for this session.");
         console_write_line("La bitacora persistente esta activa para esta sesion.");
-        console_write_line(session_journal_is_active()
+        console_write_line(rt.journal_jsonl_status == VITA_STATUS_OK
             ? "audit persistence: journal/jsonl active; sqlite hosted ready"
             : "audit persistence: sqlite hosted ready; journal inactive");
         return;
     }
 
-    console_write_line("Audit SQLite: FAILED / Auditoria SQLite: FALLA");
-    console_write_line(session_journal_is_active()
+    console_write_line(rt.journal_jsonl_status == VITA_STATUS_OK
         ? "audit persistence: journal/jsonl active (restricted mode)"
         : "audit persistence: restricted diagnostic");
     console_write_line("Restricted diagnostic mode is active.");
     console_write_line("Modo diagnostico restringido activo.");
-    console_write_line("storage_last_error:");
-    console_write_line(st.last_error[0] ? st.last_error : "none");
+    console_write_line("storage_writable:");
+    console_write_line(rt.persistent_storage_writable ? "true" : "false");
     console_write_line("UEFI physical boot can still run local console commands, but it must not claim full operational mode until persistent audit exists.");
     console_write_line("En UEFI fisico puedes usar comandos locales, pero el modo operativo completo requiere auditoria persistente.");
 }
@@ -617,18 +638,30 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
 static void handle_export_index(void) {
     const char *txt_path = "/vita/export/export-index.txt";
     const char *jsonl_path = "/vita/export/export-index.jsonl";
-    const char *txt =
-        "export_index:\n"
-        "- /vita/export/reports/last-session.txt\n"
-        "- /vita/export/reports/last-session.jsonl\n"
-        "- /vita/export/reports/diagnostic-bundle.txt\n"
-        "- /vita/export/reports/diagnostic-bundle.jsonl\n"
-        "- /vita/export/reports/self-test.txt\n"
-        "- /vita/export/reports/self-test.jsonl\n"
-        "- /vita/export/audit/audit-verify.txt\n"
-        "- /vita/export/audit/audit-verify.jsonl\n"
-        "- /vita/export/audit/current-session-events.txt\n"
-        "- /vita/export/audit/current-session-events.jsonl\n";
+    char txt[1024];
+    char probe[8];
+    unsigned long n = 0;
+#define APPEND_LINE(path_literal) do { \
+    if (storage_read_text(path_literal, probe, sizeof(probe))) { \
+        const char *p = "- " path_literal "\n"; \
+        unsigned long i = 0; \
+        while (p[i] && (n + 1U) < sizeof(txt)) { txt[n++] = p[i++]; } \
+    } \
+} while (0)
+    const char *header = "export_index:\n";
+    while (header[n] && (n + 1U) < sizeof(txt)) { txt[n] = header[n]; n++; }
+    APPEND_LINE("/vita/export/reports/last-session.txt");
+    APPEND_LINE("/vita/export/reports/last-session.jsonl");
+    APPEND_LINE("/vita/export/reports/diagnostic-bundle.txt");
+    APPEND_LINE("/vita/export/reports/diagnostic-bundle.jsonl");
+    APPEND_LINE("/vita/export/reports/self-test.txt");
+    APPEND_LINE("/vita/export/reports/self-test.jsonl");
+    APPEND_LINE("/vita/export/audit/audit-verify.txt");
+    APPEND_LINE("/vita/export/audit/audit-verify.jsonl");
+    APPEND_LINE("/vita/export/audit/current-session-events.txt");
+    APPEND_LINE("/vita/export/audit/current-session-events.jsonl");
+    txt[n] = '\0';
+#undef APPEND_LINE
     const char *jsonl = "{\"type\":\"export_index\",\"status\":\"written\"}\n";
 
     if (write_report_pair_verified(txt_path, txt, jsonl_path, jsonl)) {
@@ -640,25 +673,39 @@ static void handle_export_index(void) {
 }
 
 static void handle_selftest(const vita_command_context_t *ctx) {
+    vita_audit_runtime_status_t rt;
     const char *txt_path = "/vita/export/reports/self-test.txt";
     const char *jsonl_path = "/vita/export/reports/self-test.jsonl";
     const char *txt_pass =
         "Resultado: PASS/WARN/FAIL -> PASS\n"
         "Consola: PASS\n"
-        "Auditoria: PASS (hosted sqlite)\n"
-        "Almacenamiento: PASS (verified writable)\n"
+        "Almacenamiento: OK (verified writable)\n"
+        "Audit journal TXT/JSONL: OK\n"
+        "Audit SQLite: OK\n"
+        "Operational mode: full\n"
         "Limitaciones: no implementado wifi/network remoto\n";
-    const char *txt_warn =
+    const char *txt_warn_storage_ok =
         "Resultado: PASS/WARN/FAIL -> WARN\n"
         "Consola: PASS\n"
-        "Auditoria: WARN (uefi restricted diagnostic)\n"
+        "Almacenamiento: OK (verified writable)\n"
+        "Audit journal TXT/JSONL: OK\n"
+        "Audit SQLite: UNAVAILABLE (uefi restricted diagnostic)\n"
+        "Operational mode: restricted diagnostic\n"
+        "Limitaciones: no implementado wifi/network remoto\n";
+    const char *txt_warn_storage_degraded =
+        "Resultado: PASS/WARN/FAIL -> WARN\n"
+        "Consola: PASS\n"
         "Almacenamiento: WARN (degraded o no verificado)\n"
+        "Audit journal TXT/JSONL: WARN\n"
+        "Audit SQLite: UNAVAILABLE (uefi restricted diagnostic)\n"
+        "Operational mode: restricted diagnostic\n"
         "Limitaciones: no implementado wifi/network remoto\n";
     const char *jsonl_pass = "{\"type\":\"self_test\",\"status\":\"pass\",\"audit\":\"hosted\"}\n";
-    const char *jsonl_warn = "{\"type\":\"self_test\",\"status\":\"warn\",\"audit\":\"restricted\"}\n";
+    const char *jsonl_warn = "{\"type\":\"self_test\",\"status\":\"warn\",\"audit\":\"restricted\",\"sqlite_status\":\"unavailable\"}\n";
+    resolve_audit_runtime_status(ctx, &rt);
 
     if (write_report_pair_verified(txt_path,
-                          (ctx && ctx->boot_status.audit_ready) ? txt_pass : txt_warn,
+                          (ctx && ctx->boot_status.audit_ready) ? txt_pass : (rt.storage_status == VITA_STATUS_OK ? txt_warn_storage_ok : txt_warn_storage_degraded),
                           jsonl_path,
                           (ctx && ctx->boot_status.audit_ready) ? jsonl_pass : jsonl_warn)) {
         console_write_line("selftest: written");

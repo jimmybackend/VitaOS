@@ -69,8 +69,8 @@ if ! grep -q "Console: OK" "$LOG_FILE"; then
   exit 1
 fi
 
-if ! grep -q "Audit: FAILED" "$LOG_FILE"; then
-  echo "smoke failed: expected restricted EFI audit state" >&2
+if ! grep -q "Audit SQLite: UNAVAILABLE" "$LOG_FILE"; then
+  echo "smoke failed: expected restricted EFI sqlite audit state" >&2
   exit 1
 fi
 

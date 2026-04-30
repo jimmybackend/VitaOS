@@ -20,6 +20,25 @@ typedef struct {
 } vita_boot_status_t;
 
 typedef enum {
+    VITA_STATUS_UNKNOWN = 0,
+    VITA_STATUS_OK,
+    VITA_STATUS_WARN,
+    VITA_STATUS_FAIL,
+    VITA_STATUS_UNAVAILABLE
+} vita_status_t;
+
+typedef struct {
+    vita_status_t storage_status;
+    vita_status_t journal_txt_status;
+    vita_status_t journal_jsonl_status;
+    vita_status_t transcript_txt_status;
+    vita_status_t transcript_jsonl_status;
+    vita_status_t sqlite_status;
+    bool persistent_storage_writable;
+    bool restricted_mode;
+} vita_audit_runtime_status_t;
+
+typedef enum {
     VITA_CONSOLE_MODE_BOOT = 0,
     VITA_CONSOLE_MODE_GUIDED,
     VITA_CONSOLE_MODE_TECHNICAL,
