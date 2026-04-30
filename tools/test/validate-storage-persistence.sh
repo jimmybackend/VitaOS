@@ -19,6 +19,7 @@ storage last-error
 storage check
 journal status
 journal summary
+export index
 note usb-test.txt
 primera linea persistente
 .save
@@ -29,6 +30,7 @@ export session
 export jsonl
 export session jsonl
 diagnostic
+export vitair
 export index
 selftest
 shutdown
@@ -51,6 +53,8 @@ required_files=(
   build/storage/vita/export/reports/diagnostic-bundle.txt
   build/storage/vita/export/export-index.txt
   build/storage/vita/export/reports/self-test.txt
+  build/storage/vita/export/reports/self-test.jsonl
+  build/storage/vita/export/reports/vitair-state.jsonl
 )
 
 for f in "${required_files[@]}"; do
@@ -73,6 +77,21 @@ grep -q "Diagnostico" build/storage/vita/export/reports/diagnostic-bundle.txt ||
 grep -q "Resultado" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing resultado heading" >&2; exit 1; }
 grep -q "Audit journal TXT/JSONL: OK" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing separated journal status" >&2; exit 1; }
 grep -q "Audit SQLite: OK" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing separated sqlite status for hosted pass case" >&2; exit 1; }
+grep -q "VitaIR-Tri runtime claims:" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing VitaIR-Tri heading" >&2; exit 1; }
+for claim in \
+  "storage.persistent.writable" \
+  "audit.journal_jsonl.available" \
+  "audit.sqlite.available" \
+  "operational.full"; do
+  grep -q "$claim" build/storage/vita/export/reports/self-test.txt || { echo "self-test.txt missing claim: $claim" >&2; exit 1; }
+done
+grep -q '"type":"vitair_claim"' build/storage/vita/export/reports/self-test.jsonl || { echo "self-test.jsonl missing vitair_claim rows" >&2; exit 1; }
+grep -q '"ir_version":"vitair-tri/0.1"' build/storage/vita/export/reports/self-test.jsonl || { echo "self-test.jsonl missing VitaIR version" >&2; exit 1; }
+for claim in "storage.persistent.writable" "audit.sqlite.available"; do
+  grep -q "\"claim\":\"$claim\"" build/storage/vita/export/reports/self-test.jsonl || { echo "self-test.jsonl missing claim: $claim" >&2; exit 1; }
+done
+! grep -Eq '"state":[[:space:]]*\+1|"state"[[:space:]]*:[[:space:]]*"[^"]+"' build/storage/vita/export/reports/self-test.jsonl || { echo "self-test.jsonl has invalid state encoding" >&2; exit 1; }
+grep -Eq '"state":[[:space:]]*(-1|0|1)([,}])' build/storage/vita/export/reports/self-test.jsonl || { echo "self-test.jsonl missing numeric VitaIR state" >&2; exit 1; }
 grep -q '"boot_id"' build/storage/vita/export/reports/last-session.jsonl || { echo "jsonl missing boot_id key" >&2; exit 1; }
 grep -q '"event_type"' build/storage/vita/audit/sessions/session-000001.jsonl || { echo "jsonl missing event_type key" >&2; exit 1; }
 while IFS= read -r line; do
@@ -81,6 +100,29 @@ while IFS= read -r line; do
   [[ "$line" == *'"event_type"'* ]] || { echo "jsonl line missing event_type" >&2; exit 1; }
   [[ "$line" == *'"seq"'* ]] || { echo "jsonl line missing seq" >&2; exit 1; }
 done < build/storage/vita/audit/sessions/session-000001.jsonl
+while IFS= read -r line; do
+  [[ "$line" == \{* ]] || { echo "vitair-state line does not start with {" >&2; exit 1; }
+  [[ "$line" == *\} ]] || { echo "vitair-state line does not end with }" >&2; exit 1; }
+done < build/storage/vita/export/reports/vitair-state.jsonl
+grep -q '"type":"vitair_claim"' build/storage/vita/export/reports/vitair-state.jsonl || { echo "vitair-state.jsonl missing vitair_claim rows" >&2; exit 1; }
+grep -q '"ir_version":"vitair-tri/0.1"' build/storage/vita/export/reports/vitair-state.jsonl || { echo "vitair-state.jsonl missing VitaIR version" >&2; exit 1; }
+for claim in \
+  "storage.persistent.writable" \
+  "audit.journal_jsonl.available" \
+  "audit.sqlite.available" \
+  "operational.full"; do
+  grep -q "\"claim\":\"$claim\"" build/storage/vita/export/reports/vitair-state.jsonl || { echo "vitair-state.jsonl missing claim: $claim" >&2; exit 1; }
+done
+awk '
+  /"type":"vitair_claim"/ {
+    if ($0 !~ /"claim":/) { print "vitair_claim row missing claim" > "/dev/stderr"; exit 1 }
+    if ($0 !~ /"state":[[:space:]]*(-1|0|1)([,}])/) { print "vitair_claim row has invalid numeric state" > "/dev/stderr"; exit 1 }
+    if ($0 ~ /"state":[[:space:]]*\+1/) { print "vitair_claim row uses +1" > "/dev/stderr"; exit 1 }
+    if ($0 ~ /"state"[[:space:]]*:[[:space:]]*"[^"]+"/) { print "vitair_claim row has string state" > "/dev/stderr"; exit 1 }
+    if ($0 !~ /"severity":/) { print "vitair_claim row missing severity" > "/dev/stderr"; exit 1 }
+  }
+' build/storage/vita/export/reports/vitair-state.jsonl
+! grep -Eqi 'Authorization|Bearer|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|OPENAI_API_KEY|api_key|token' build/storage/vita/export/reports/vitair-state.jsonl || { echo "vitair-state.jsonl leaked secret-like token" >&2; exit 1; }
 cat build/storage/vita/audit/sessions/session-000001*.jsonl | grep -q '"event_type":"session_end"' || cat build/storage/vita/audit/sessions/session-000001*.jsonl | grep -q '"event_type":"transcript_truncated"' || { echo "transcript missing session_end/truncated marker" >&2; exit 1; }
 grep -q '"storage_state":"verified"' build/storage/vita/export/reports/diagnostic-bundle.jsonl || { echo "diagnostic jsonl did not keep verified storage state" >&2; exit 1; }
 
@@ -191,6 +233,11 @@ if find build/storage/vita/audit/sessions -maxdepth 1 -type f \( -name 'session-
   echo "ansi escape codes found in session artifacts" >&2
   exit 1
 fi
+if find build/storage/vita/export/reports -maxdepth 1 -type f \( -name 'self-test.txt' -o -name 'self-test.jsonl' -o -name 'vitair-state.jsonl' \) \
+  -exec grep -n $'\033\\[' {} + >/dev/null; then
+  echo "ansi escape codes found in VitaIR/selftest artifacts" >&2
+  exit 1
+fi
 
 grep -q "storage bootstrap: verified" "$LOG_SUCCESS" || { echo "log missing storage bootstrap verified" >&2; exit 1; }
 grep -q "storage: verified writable" "$LOG_SUCCESS" || { echo "log missing storage writable verification" >&2; exit 1; }
@@ -212,6 +259,22 @@ fi
 if grep -q "/vita/export/audit/current-session-events.txt" build/storage/vita/export/export-index.txt; then
   [[ -f build/storage/vita/export/audit/current-session-events.txt ]] || { echo "export-index lists missing current-session-events.txt" >&2; exit 1; }
 fi
+grep -q "/vita/export/reports/vitair-state.jsonl" build/storage/vita/export/export-index.txt || { echo "export-index missing vitair-state.jsonl after export vitair" >&2; exit 1; }
+
+rm -rf build/storage
+cat <<'CMDS' | ./build/hosted/vitaos-hosted > build/test/validate-export-index-order.log 2>&1
+export index
+shutdown
+CMDS
+[[ -f build/storage/vita/export/export-index.txt ]] || { echo "missing export-index.txt after pre-vitair export index" >&2; exit 1; }
+! grep -q "/vita/export/reports/vitair-state.jsonl" build/storage/vita/export/export-index.txt || { echo "export-index listed vitair-state.jsonl before export vitair" >&2; exit 1; }
+
+cat <<'CMDS' | ./build/hosted/vitaos-hosted >> build/test/validate-export-index-order.log 2>&1
+export vitair
+export index
+shutdown
+CMDS
+grep -q "/vita/export/reports/vitair-state.jsonl" build/storage/vita/export/export-index.txt || { echo "export-index missing vitair-state.jsonl after export vitair in ordered check" >&2; exit 1; }
 
 rm -rf build/storage
 printf 'not-a-dir' > build/storage
