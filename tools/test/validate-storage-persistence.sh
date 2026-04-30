@@ -93,8 +93,22 @@ grep -q '"storage_state":"verified"' build/storage/vita/export/reports/diagnosti
   printf 'export session jsonl\n'
   printf 'shutdown\n'
 } | ./build/hosted/vitaos-hosted > build/test/validate-transcript-long.log 2>&1
-LONG_BASE=build/storage/vita/audit/sessions/session-000002.jsonl
-LONG_PART2=build/storage/vita/audit/sessions/session-000002.part-0002.jsonl
+LONG_BASE=
+LONG_PART2=
+LONG_GLOB=
+LONG_PART_COUNT=0
+while IFS= read -r base_jsonl; do
+  base_no_ext=${base_jsonl%.jsonl}
+  candidate_part2="${base_no_ext}.part-0002.jsonl"
+  [[ -f "$candidate_part2" ]] || continue
+  candidate_part_count=$(find build/storage/vita/audit/sessions -maxdepth 1 -type f -name "$(basename "$base_no_ext").part-*.jsonl" | wc -l)
+  if [[ "$candidate_part_count" -gt "$LONG_PART_COUNT" ]]; then
+    LONG_BASE="$base_jsonl"
+    LONG_PART2="$candidate_part2"
+    LONG_GLOB="${base_no_ext}"'*.jsonl'
+    LONG_PART_COUNT=$candidate_part_count
+  fi
+done < <(find build/storage/vita/audit/sessions -maxdepth 1 -type f -name 'session-*.jsonl' ! -name 'session-*.part-*.jsonl' | sort)
 [[ -f "$LONG_BASE" ]] || { echo "missing long transcript base jsonl" >&2; exit 1; }
 [[ -f "$LONG_PART2" ]] || { echo "missing long transcript part-0002 jsonl" >&2; exit 1; }
 while IFS= read -r jf; do
@@ -105,14 +119,14 @@ while IFS= read -r jf; do
     [[ "$line" == *'"seq"'* ]] || { echo "jsonl line missing seq in $jf" >&2; exit 1; }
   done < "$jf"
 done < <(find build/storage/vita/audit/sessions -maxdepth 1 -type f \( -name 'session-*.jsonl' -o -name 'session-*.part-*.jsonl' \) | sort)
-cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q 'Estado de almacenamiento / Storage status:' || { echo "missing storage status output after rotation" >&2; exit 1; }
-cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q 'Resumen del journal / Journal summary:' || { echo "missing journal summary output after rotation" >&2; exit 1; }
-cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"session_end"' || { echo "missing session_end in rotated jsonl parts" >&2; exit 1; }
-cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_rotated"' || { echo "missing transcript_rotated event" >&2; exit 1; }
-cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_part_start"' || { echo "missing transcript_part_start event" >&2; exit 1; }
-! cat build/storage/vita/audit/sessions/session-000002*.jsonl | grep -q '"event_type":"transcript_truncated"' || { echo "unexpected transcript_truncated after successful rotation" >&2; exit 1; }
+grep -q 'Estado de almacenamiento / Storage status:' "$LONG_BASE" "${LONG_BASE%.jsonl}".part-*.jsonl || { echo "missing storage status output after rotation" >&2; exit 1; }
+grep -q 'Resumen del journal / Journal summary:' "$LONG_BASE" "${LONG_BASE%.jsonl}".part-*.jsonl || { echo "missing journal summary output after rotation" >&2; exit 1; }
+grep -q '"event_type":"session_end"' "$LONG_BASE" "${LONG_BASE%.jsonl}".part-*.jsonl || { echo "missing session_end in rotated jsonl parts" >&2; exit 1; }
+grep -q '"event_type":"transcript_rotated"' "$LONG_BASE" "${LONG_BASE%.jsonl}".part-*.jsonl || { echo "missing transcript_rotated event" >&2; exit 1; }
+grep -q '"event_type":"transcript_part_start"' "$LONG_BASE" "${LONG_BASE%.jsonl}".part-*.jsonl || { echo "missing transcript_part_start event" >&2; exit 1; }
+! grep -q '"event_type":"transcript_truncated"' "$LONG_BASE" "${LONG_BASE%.jsonl}".part-*.jsonl || { echo "unexpected transcript_truncated after successful rotation" >&2; exit 1; }
 grep -q 'transcript_jsonl_part_count' build/storage/vita/export/reports/last-session.jsonl || { echo "missing transcript_jsonl_part_count in jsonl report metadata" >&2; exit 1; }
-grep -q '/vita/audit/sessions/session-000002.part-0002.jsonl' build/storage/vita/export/reports/last-session.jsonl || { echo "jsonl report metadata missing rotated part path" >&2; exit 1; }
+grep -q "/vita/audit/sessions/$(basename "$LONG_PART2")" build/storage/vita/export/reports/last-session.jsonl || { echo "jsonl report metadata missing rotated part path" >&2; exit 1; }
 prev_seq=-1
 while IFS= read -r line; do
   seq=$(printf '%s\n' "$line" | sed -n 's/.*"seq":\([0-9][0-9]*\).*/\1/p')
@@ -122,14 +136,18 @@ while IFS= read -r line; do
     exit 1
   fi
   prev_seq=$seq
-done < <(cat build/storage/vita/audit/sessions/session-000002.jsonl build/storage/vita/audit/sessions/session-000002.part-*.jsonl)
+done < <(cat "$LONG_BASE" "${LONG_BASE%.jsonl}".part-*.jsonl)
 
 cat <<'CMDS' | ./build/hosted/vitaos-hosted > build/test/validate-previous-session.log 2>&1
 status
 shutdown
 CMDS
-[[ -f build/storage/vita/audit/sessions/session-000003.jsonl ]] || { echo "missing session-000003 transcript jsonl" >&2; exit 1; }
-! grep -q '"event_type":"previous_session_unclean"' build/storage/vita/audit/sessions/session-000003*.jsonl || { echo "false previous_session_unclean for rotated clean previous session" >&2; exit 1; }
+LONG_SESSION_NUM=$(basename "$LONG_BASE" | sed -n 's/^session-\([0-9][0-9]*\)\.jsonl$/\1/p')
+[[ -n "$LONG_SESSION_NUM" ]] || { echo "failed to parse long transcript session number" >&2; exit 1; }
+NEXT_SESSION_NUM=$(printf "%06d" $((10#$LONG_SESSION_NUM + 1)))
+NEXT_SESSION_BASE="build/storage/vita/audit/sessions/session-${NEXT_SESSION_NUM}.jsonl"
+[[ -f "$NEXT_SESSION_BASE" ]] || { echo "missing session-${NEXT_SESSION_NUM} transcript jsonl" >&2; exit 1; }
+! grep -q '"event_type":"previous_session_unclean"' "$NEXT_SESSION_BASE" "${NEXT_SESSION_BASE%.jsonl}".part-*.jsonl 2>/dev/null || { echo "false previous_session_unclean for rotated clean previous session" >&2; exit 1; }
 
 if find build/storage/vita/export/reports -type f \( -name '*.txt' -o -name '*.jsonl' \) \
   -exec grep -n $'\033\\[' {} + >/dev/null; then
