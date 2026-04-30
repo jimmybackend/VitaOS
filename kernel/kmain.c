@@ -277,6 +277,7 @@ void kmain(const vita_handoff_t *handoff) {
 
     if (!operational_ready) {
         console_write_line("Operational mode blocked / Modo operativo bloqueado");
+        console_write_line("Operational mode: restricted diagnostic because SQLite audit is unavailable.");
         console_write_line("Persistent audit is required before full guided operation.");
         console_write_line("La auditoria persistente es obligatoria antes del modo operativo completo.");
         console_write_line("Local diagnostic commands remain available / Los comandos locales de diagnostico siguen disponibles.");
