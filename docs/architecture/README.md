@@ -3,6 +3,7 @@
 Este directorio agrupa documentos de arquitectura operativa del sistema.
 
 Archivos sugeridos:
+- `vitaos-architecture-tracks.md`
 - `boot-flow.md`
 - `ai-core.md`
 - `kernel-layout.md`

@@ -1,185 +1,149 @@
-# VitaOS architecture tracks
+# VitaOS Architecture Tracks (Post-PR #52)
 
-VitaOS tiene dos lineas de arquitectura complementarias. Este documento define donde comenzar despues de la integracion inicial de VitaIR-Tri y evita mezclar objetivos de sistema operativo propio con objetivos practicos basados en Linux.
+## Purpose
 
-## Proposito
+This document defines the architectural split used to guide near-term and mid-term VitaOS planning after PR #52 (merged on May 5, 2026).
 
-El proyecto mantiene como objetivo principal construir un sistema util en emergencia, honesto sobre sus capacidades reales, auditable y text-first. Para avanzar sin confundir el alcance, VitaOS se organiza en dos tracks:
+The goal is clarity, not scope expansion:
 
-1. **Native VitaOS Core**: el sistema propio, live/UEFI-first, audit-first y orientado a uso aun sin un OS tradicional.
-2. **Linux-Assisted VitaOS**: una variante practica basada en Linux para acelerar navegador, red, drivers, accesibilidad e IA remota cuando exista conectividad.
+- preserve truthful claims,
+- preserve audit-first behavior,
+- preserve emergency usefulness,
+- avoid coupling native core decisions to unimplemented Linux assumptions.
 
-Linux-Assisted VitaOS no reemplaza al core nativo. Es un companero operativo para escenarios donde Linux ya puede aportar hardware, red y herramientas de usuario mientras el core propio madura.
+## Why this split exists
 
-## Estado real actual
+VitaOS currently has two valid but different needs:
 
-El estado documentado aqui debe seguir la regla de honestidad tecnica del proyecto: no afirmar capacidades que aun no esten implementadas.
+1. A **native, from-scratch operating-system core** that boots independently and remains useful in constrained/offline emergency contexts.
+2. A **future Linux-assisted companion path** that can accelerate practical capabilities (drivers, network tooling, browser, accessibility, remote AI usage) when available.
 
-Implementado o documentado en el slice actual:
+Without an explicit split, design discussions can accidentally blur implemented behavior with aspirational behavior. This document prevents that drift.
 
-- Boot UEFI y hosted.
-- Persistencia real sobre el arbol `/vita` cuando existe backend writable.
-- Reportes TXT/JSONL.
-- Historial persistente por sesion.
-- Editor seguro.
-- Validadores del flujo actual.
-- VitaIR-Tri como representacion interna y auditable de claims ternarios.
-- Comandos y reportes que exponen VitaIR-Tri, incluyendo `status`, `audit`, `storage status`, `selftest`, `diagnostic`, `export vitair` y `export vitair-state`.
+## Current real implemented state
 
-No implementado todavia:
+As of PR #52:
 
-- SQLite persistente completa en UEFI.
-- Red/Wi-Fi real completa en hardware UEFI.
-- Integracion real con AWS Bedrock.
-- IA local completa.
-- Hosted AI Bridge de produccion.
-- GUI o navegador dentro del core nativo.
-- ISO Linux de VitaOS.
+- VitaOS is centered on an audit-first, text-first, live/UEFI-first architecture.
+- `/vita` persistent storage behavior is a core operational concept.
+- JSONL-style reporting artifacts and session history flows are part of the practical workflow.
+- Safe editor and export-oriented flows are part of the user-facing operational model.
+- VitaIR-Tri runtime claims exist and must remain disciplined/truthful.
+- PR #52 only cleaned up VitaIR-Tri formatting helpers in `kernel/command_core.c`; visible formats were not changed.
+
+## Explicit not-yet-implemented capabilities
+
+The project must **not** claim any of the following unless implemented and validated:
+
+- full real network operation,
+- AWS Bedrock integration,
+- full local AI autonomy,
+- Hosted AI Bridge completion,
+- complete SQLite persistence in freestanding UEFI path,
+- GUI/browser stack in native core,
+- published Linux-based VitaOS ISO.
 
 ## Track 1: Native VitaOS Core
 
-### Objetivo
+### Definition
 
-Seguir construyendo VitaOS como sistema propio, live-first, UEFI-first, text-first y audit-first. Este track protege el nucleo independiente del proyecto.
+Native VitaOS Core is the from-scratch VitaOS line.
 
-### Prioridades
+### Principles
 
-- Mantener el core propio y freestanding-friendly.
-- No depender de Linux para arrancar.
-- Preservar consola local y flujo textual guiado.
-- Fortalecer storage persistente, auditoria, sesiones, exports y diagnisticos.
-- Mantener VitaIR-Tri como lenguaje interno para expresar estado operativo auditable.
-- Preparar ISO/USB real cuando se entre en fase explicita de validacion de hardware.
-- Mantener modo emergencia util aun sin red.
+- UEFI/live-first boot model.
+- Text-first operational interface.
+- Audit-first behavior and evidence discipline.
+- Emergency/offline capability as a primary goal.
+- Must not depend on Linux in order to boot.
 
-### Reglas de este track
+### Core operational artifacts
 
-- No introducir dependencias Linux-specific dentro del core UEFI si contaminan el diseno.
-- No usar `stdio` en rutas UEFI/freestanding.
-- No usar memoria dinamica salvo fase explicita.
-- No tocar `storage_bootstrap_persistent_tree()` sin justificacion fuerte.
-- No tocar `schema/audit.sql` sin una fase explicita de schema.
-- No romper JSONL, rotacion de sesiones ni last-session export.
-- No prometer red, AWS, IA local completa ni SQLite UEFI completa hasta que existan.
+Native core uses and maintains:
 
-### Siguiente comienzo recomendado
+- `/vita` persistent tree,
+- JSONL reports,
+- session history,
+- export flows,
+- storage diagnostics,
+- VitaIR-Tri claims.
 
-El siguiente paso recomendado para este track es un PR pequeno de documentacion o checklist nativo, por ejemplo:
+### Integrity constraints
 
-```text
-docs/architecture/native-vitaos-roadmap.md
-```
-
-Ese documento debe listar:
-
-- lo ya implementado;
-- lo pendiente;
-- los riesgos tecnicos;
-- las reglas que no se deben romper;
-- el criterio para entrar a fase ISO/USB real.
+Native core claims must remain conservative and implementation-bound.
+It must not claim network/AWS/full local AI/Hosted AI Bridge/full UEFI SQLite persistence unless those capabilities are actually present and validated.
 
 ## Track 2: Linux-Assisted VitaOS
 
-### Objetivo
+### Definition
 
-Crear una variante practica basada en Linux que pueda arrancar como live ISO o rescue OS y ayudar antes de que el sistema propio tenga todo el soporte de hardware, red, navegador e IA remota.
+Linux-Assisted VitaOS is a **future** practical companion environment that may use Linux capabilities to extend usefulness in connectivity-rich or hardware-diverse contexts.
 
-### Diferencia contra Native VitaOS Core
+### Principles
 
-Native VitaOS Core busca independencia tecnica y control del boot. Linux-Assisted VitaOS busca utilidad practica temprana usando una base Linux existente.
+- Complements Native VitaOS Core; does not replace it.
+- May leverage Linux drivers, networking, browser tooling, accessibility stacks, and remote AI paths when internet exists.
+- Must consume `/vita` artifacts and VitaIR-Tri claims as system truth inputs.
+- Must not invent core system state separate from audited/native outputs.
+- Must not push Linux-specific assumptions into the native UEFI core.
 
-Linux-Assisted VitaOS puede tener navegador, red, drivers, herramientas de diagnostico, accesibilidad y cliente de IA remota cuando haya internet. Aun asi, debe consumir estado real de VitaOS y no inventar disponibilidad.
+### Current boundary
 
-### Requisitos minimos esperados
+No claim is made that a Linux VitaOS ISO exists today.
 
-- Arranque live basado en Linux.
-- Red cableada y Wi-Fi mediante soporte de la distro base.
-- Navegador o interfaz web disponible.
-- Herramientas de montaje/copia para acceder a `/vita`.
-- Lectura de reportes TXT/JSONL.
-- Lectura de `/vita/export/reports/vitair-state.jsonl` cuando exista.
-- Generacion de diagnosticos del entorno Linux-assisted.
-- Modo emergencia guiado.
+## Relationship with `/vita`
 
-### Relacion con `/vita` y VitaIR-Tri
+`/vita` is the continuity boundary between tracks.
 
-Linux-Assisted VitaOS debe tratar `/vita` como fuente de verdad persistente cuando este disponible. En particular:
+- Native core is the authoritative producer of core boot/session/audit artifacts for native operation.
+- Linux-assisted tools (when implemented) should read, validate, and extend workflows from existing `/vita` data.
+- Cross-track tooling should prefer compatibility with established `/vita` structure over ad-hoc parallel state stores.
 
-- debe leer `vitair-state.jsonl` si existe;
-- debe interpretar `state` solo como `1`, `0` o `-1` en JSONL;
-- puede mostrar `+1`, `0` o `-1` en salida humana;
-- debe mantener `severity` como informacion independiente de `state`;
-- no debe inventar que SQLite, red, IA remota o storage estan disponibles si los claims no lo respaldan.
+## Relationship with VitaIR-Tri
 
-### IA remota
+VitaIR-Tri is the runtime claim layer for operational understanding and recommendations.
 
-La IA remota en este track debe operar como asistente conectada cuando haya red. Debe consumir diagnosticos, exports y claims VitaIR-Tri. No debe sustituir la auditoria ni afirmar estado no medido.
+Across both tracks:
 
-### Riesgos
+- claims must stay auditable and evidence-bound,
+- claims must avoid unimplemented capability assertions,
+- claims must not contain secret persistence,
+- claims should remain machine-consumable and human-clear.
 
-- Confundir la variante Linux con el sistema operativo propio.
-- Introducir dependencias Linux-specific en el core nativo.
-- Prometer una ISO Linux de VitaOS antes de construirla.
-- Dejar que la IA remota invente estado operativo.
-- Duplicar formatos de auditoria en vez de consumir los existentes.
+Linux-assisted layers must treat native VitaIR-Tri outputs as inputs to interpret, not overwrite with invented platform assumptions.
 
-### Siguiente comienzo recomendado
+## Risks
 
-El siguiente paso recomendado para este track es documentar arquitectura antes de escribir codigo:
+1. **Capability drift**: wording that implies implemented network/AI/hosted capabilities when only stubs or plans exist.
+2. **Boundary erosion**: Linux convenience decisions leaking into native UEFI assumptions.
+3. **Audit dilution**: adding auxiliary flows that bypass `/vita` and reduce traceability.
+4. **Safety overclaim**: emergency users receiving confidence not supported by actual system capability.
 
-```text
-docs/architecture/linux-assisted-vitaos.md
-```
+## Recommended next PRs
 
-Ese documento debe explicar proposito, requisitos minimos, consumo de `/vita`, consumo de VitaIR-Tri, limites, riesgos, roadmap y que no esta implementado todavia.
+1. Add cross-reference links in existing docs to this architecture split.
+2. Add a concise “implemented vs planned” matrix for Native core and Linux-assisted track.
+3. Add a VitaIR-Tri claim taxonomy note that maps each claim category to evidence source.
+4. Add `/vita` artifact contract notes for future Linux-assisted consumers (read-only first).
 
-## Punto de inicio recomendado ahora
+## Testing policy
 
-Despues de PR #52, el mejor comienzo es documentar esta bifurcacion arquitectonica antes de tocar codigo. Este documento funciona como PR base para separar las metas:
+### Docs-only PRs
 
-- **Native VitaOS Core** sigue siendo la linea principal del sistema propio.
-- **Linux-Assisted VitaOS** queda como linea companera para utilidad practica con Linux, red, navegador e IA remota.
+- Run documentation diff/review checks only.
+- Do **not** run `make`, validators, or `make iso` by default.
 
-Con esto, los proximos PRs pueden avanzar sin mezclar responsabilidades.
+### Small C PRs
 
-## Politica de pruebas para cambios docs-only
+- Run `make hosted`.
+- Run `make`.
+- Run focused manual test for the changed flow.
 
-Para PRs que solo agregan o modifican documentacion:
+### ISO/USB phase
 
-```bash
-git diff
-rg "Linux-Assisted|Native VitaOS|VitaIR-Tri" docs/architecture README.md
-git status
-```
+- Run full validation only when explicitly requested for that phase.
 
-No se requiere `make hosted`, `make`, validadores largos ni `make iso` si el cambio es estrictamente documental.
+## Scope guardrails for this document
 
-## Politica de pruebas para PRs pequenos de C
-
-Para cambios pequenos de C:
-
-```bash
-make hosted
-make
-```
-
-Agregar una prueba manual focalizada al comando o flujo afectado.
-
-No ejecutar validadores largos ni `make iso` salvo fase explicita.
-
-## Politica para fase ISO/USB real
-
-Cuando se decida entrar en preparacion ISO/USB real, usar una fase explicita con validacion completa:
-
-```bash
-make clean
-make hosted
-make smoke-audit
-make
-./tools/test/validate-console-editor-history.sh
-./tools/test/validate-storage-persistence.sh
-./tools/test/validate-vitaos.sh
-make iso
-```
-
-Despues de eso, realizar prueba USB real y auditar el contenido persistente de `/vita` antes de avanzar a red, Hosted AI Bridge o integraciones remotas.
+This document is descriptive and architectural only.
+It does **not** introduce code, schema, storage, or format changes.
