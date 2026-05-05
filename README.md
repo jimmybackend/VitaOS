@@ -251,23 +251,55 @@ Rutas principales:
 ---
 
 
-## VitaIR-Tri: internal ternary representation
+## VitaIR-Tri commands and reports
 
-VitaOS define **VitaIR-Tri** como una representación interna textual y auditable para expresar *claims* de estado con semántica ternaria (`-1`, `0`, `+1`).
+VitaOS usa **VitaIR-Tri** como representación interna textual y auditable para *claims* ternarios (`+1`, `0`, `-1`) en comandos y reportes operativos actuales.
 
-¿Por qué existe?
+### Comandos que muestran VitaIR-Tri
 
-- Para unificar estados operativos de forma simple y verificable por humanos.
-- Para preparar consumo futuro en status/audit/selftest/export sin romper el flujo actual.
-- Para mantener separación clara entre **estado** (ternario) y **severidad** (`info/warn/error/critical`).
+- `status`
+- `audit`
+- `storage status`
 
-Límites explícitos:
+### Comandos/reportes que exportan VitaIR-Tri
 
-- **No** reemplaza SQLite ni el roadmap de auditoría SQLite.
-- **No** reemplaza el audit log TXT/JSONL actual.
-- **No** es BitNet, no es un LLM y no implica IA local completa implementada.
+- `selftest` (TXT/JSONL)
+- `diagnostic` (TXT/JSONL)
+- `export vitair`
+- `export vitair-state`
 
-Su adopción será gradual y honesta, empezando por documentación y posterior uso incremental en status/audit/selftest/export.
+Archivo generado asociado:
+
+- `/vita/export/reports/vitair-state.jsonl`
+
+### Ejemplo de salida humana
+
+```txt
+VitaIR-Tri runtime claims:
+- storage.persistent.writable: +1 info
+- audit.journal_jsonl.available: +1 info
+- audit.sqlite.available: -1 warn
+- operational.restricted: +1 info
+- operational.full: -1 warn
+```
+
+### Ejemplo JSONL válido
+
+```jsonl
+{"type":"vitair_claim","ir_version":"vitair-tri/0.1","claim":"storage.persistent.writable","state":1,"severity":"info"}
+{"type":"vitair_claim","ir_version":"vitair-tri/0.1","claim":"audit.sqlite.available","state":-1,"severity":"warn"}
+```
+
+### Reglas de formato y semántica
+
+- En salida humana se puede mostrar `+1`, `0`, `-1`.
+- En JSONL, `state` debe ser numérico: `1`, `0`, `-1`.
+- Nunca usar `"state":+1` en JSONL.
+- `severity` es independiente de `state`.
+- `audit.sqlite.available = -1` no implica que hayan fallado `storage` o `audit.journal_jsonl`.
+- VitaIR-Tri **no** reemplaza SQLite.
+- VitaIR-Tri **no** reemplaza el audit log TXT/JSONL.
+- VitaIR-Tri **no** implica IA local completa.
 
 ## Validadores y checks
 
@@ -415,4 +447,3 @@ VitaOS mantiene `audit-first` como regla central.
 - No afirmar IA remota/local real cuando solo hay stubs o preparación.
 - No afirmar SQLite persistente completa en UEFI cuando no existe aún.
 - Si no hay auditoría persistente válida para modo completo, operar y comunicar modo restringido/diagnóstico.
-
