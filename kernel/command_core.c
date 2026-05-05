@@ -175,6 +175,64 @@ static void console_write_i32(const char *label, int value) {
     console_write_line(num);
 }
 
+
+static const char *safe_vitair_symbol(vita_tri_t state) {
+    const char *symbol = vita_tri_to_symbol(state);
+    if (!symbol || !symbol[0]) {
+        return "0";
+    }
+    return symbol;
+}
+
+static const char *safe_vitair_state_num(vita_tri_t state) {
+    const char *state_num = vita_tri_to_json_number(state);
+    if (!state_num || !state_num[0]) {
+        return "0";
+    }
+    return state_num;
+}
+
+static const char *safe_vitair_severity(vita_ir_severity_t severity) {
+    const char *text = vita_ir_severity_to_string(severity);
+    if (!text || !text[0]) {
+        return "warn";
+    }
+    return text;
+}
+
+static void append_vitair_claim_txt_line(char *dst, size_t cap, size_t *len, const char *claim, const char *symbol, const char *severity, bool with_newline) {
+    append_text(dst, cap, len, "- ");
+    append_text(dst, cap, len, claim);
+    append_text(dst, cap, len, ": ");
+    append_text(dst, cap, len, symbol);
+    append_text(dst, cap, len, " ");
+    append_text(dst, cap, len, severity);
+    if (with_newline) {
+        append_text(dst, cap, len, "\n");
+    }
+}
+
+static void append_vitair_claim_jsonl_line(char *dst,
+                                           size_t cap,
+                                           size_t *len,
+                                           const char *claim,
+                                           const char *state_num,
+                                           const char *severity) {
+    append_text(dst, cap, len, "{\"type\":\"vitair_claim\",\"ir_version\":\"");
+    append_text(dst, cap, len, VITA_IR_VERSION);
+    append_text(dst, cap, len, "\",\"claim\":\"");
+    append_text(dst, cap, len, claim);
+    append_text(dst, cap, len, "\",\"state\":");
+    append_text(dst, cap, len, state_num);
+    append_text(dst, cap, len, ",\"severity\":\"");
+    append_text(dst, cap, len, severity);
+    append_text(dst, cap, len, "\"}\n");
+}
+
+static bool claim_name_matches(const vita_ir_claim_t *claim, const char *target_claim) {
+    return claim && str_eq(claim->claim, target_claim);
+}
+
 static void resolve_audit_runtime_status(const vita_command_context_t *ctx, vita_audit_runtime_status_t *out) {
     vita_storage_status_t st;
     bool journal_active = session_journal_is_active();
@@ -375,24 +433,12 @@ static void show_audit(const vita_command_context_t *ctx) {
     for (i = 0; i < claim_count; ++i) {
         char line[160];
         size_t pos = 0U;
-        const char *claim = (claims[i].claim && claims[i].claim[0]) ? claims[i].claim : "unknown.claim";
-        const char *symbol = vita_tri_to_symbol(claims[i].state);
-        const char *severity = vita_ir_severity_to_string(claims[i].severity);
-
-        if (!symbol || !symbol[0]) {
-            symbol = "0";
-        }
-        if (!severity || !severity[0]) {
-            severity = "warn";
-        }
+        const char *claim = safe_text(claims[i].claim, "unknown.claim");
+        const char *symbol = safe_vitair_symbol(claims[i].state);
+        const char *severity = safe_vitair_severity(claims[i].severity);
 
         line[0] = '\0';
-        append_text(line, sizeof(line), &pos, "- ");
-        append_text(line, sizeof(line), &pos, claim);
-        append_text(line, sizeof(line), &pos, ": ");
-        append_text(line, sizeof(line), &pos, symbol);
-        append_text(line, sizeof(line), &pos, " ");
-        append_text(line, sizeof(line), &pos, severity);
+        append_vitair_claim_txt_line(line, sizeof(line), &pos, claim, symbol, severity, false);
         console_write_line(line);
     }
 }
@@ -424,26 +470,14 @@ static void show_status_vitair_summary(const vita_command_context_t *ctx) {
         size_t j;
 
         for (j = 0; j < claim_count; ++j) {
-            if (str_eq(claims[j].claim, target_claim)) {
+            if (claim_name_matches(&claims[j], target_claim)) {
                 char line[160];
                 size_t pos = 0U;
-                const char *symbol = vita_tri_to_symbol(claims[j].state);
-                const char *severity = vita_ir_severity_to_string(claims[j].severity);
-
-                if (!symbol || !symbol[0]) {
-                    symbol = "0";
-                }
-                if (!severity || !severity[0]) {
-                    severity = "warn";
-                }
+                const char *symbol = safe_vitair_symbol(claims[j].state);
+                const char *severity = safe_vitair_severity(claims[j].severity);
 
                 line[0] = '\0';
-                append_text(line, sizeof(line), &pos, "- ");
-                append_text(line, sizeof(line), &pos, target_claim);
-                append_text(line, sizeof(line), &pos, ": ");
-                append_text(line, sizeof(line), &pos, symbol);
-                append_text(line, sizeof(line), &pos, " ");
-                append_text(line, sizeof(line), &pos, severity);
+                append_vitair_claim_txt_line(line, sizeof(line), &pos, target_claim, symbol, severity, false);
                 console_write_line(line);
                 break;
             }
@@ -477,26 +511,14 @@ static void show_storage_status_vitair_summary(const vita_command_context_t *ctx
         size_t j;
 
         for (j = 0; j < claim_count; ++j) {
-            if (str_eq(claims[j].claim, target_claim)) {
+            if (claim_name_matches(&claims[j], target_claim)) {
                 char line[160];
                 size_t pos = 0U;
-                const char *symbol = vita_tri_to_symbol(claims[j].state);
-                const char *severity = vita_ir_severity_to_string(claims[j].severity);
-
-                if (!symbol || !symbol[0]) {
-                    symbol = "0";
-                }
-                if (!severity || !severity[0]) {
-                    severity = "warn";
-                }
+                const char *symbol = safe_vitair_symbol(claims[j].state);
+                const char *severity = safe_vitair_severity(claims[j].severity);
 
                 line[0] = '\0';
-                append_text(line, sizeof(line), &pos, "- ");
-                append_text(line, sizeof(line), &pos, target_claim);
-                append_text(line, sizeof(line), &pos, ": ");
-                append_text(line, sizeof(line), &pos, symbol);
-                append_text(line, sizeof(line), &pos, " ");
-                append_text(line, sizeof(line), &pos, severity);
+                append_vitair_claim_txt_line(line, sizeof(line), &pos, target_claim, symbol, severity, false);
                 console_write_line(line);
                 printed = true;
                 break;
@@ -819,39 +841,16 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
             size_t txt_line_len = 0U;
             size_t jsonl_line_len = 0U;
             const char *claim = safe_text(claims[i].claim, "unknown.claim");
-            const char *symbol = vita_tri_to_symbol(claims[i].state);
-            const char *state_num = vita_tri_to_json_number(claims[i].state);
-            const char *severity = vita_ir_severity_to_string(claims[i].severity);
-
-            if (!symbol || !symbol[0]) { symbol = "0"; }
-            if (!state_num || !state_num[0]) { state_num = "0"; }
-            if (!severity || !severity[0]) { severity = "warn"; }
+            const char *symbol = safe_vitair_symbol(claims[i].state);
+            const char *state_num = safe_vitair_state_num(claims[i].state);
+            const char *severity = safe_vitair_severity(claims[i].severity);
 
             txt_line[0] = '\0';
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, "- ");
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, claim);
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, ": ");
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, symbol);
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, " ");
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, severity);
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, "\n");
+            append_vitair_claim_txt_line(txt_line, sizeof(txt_line), &txt_line_len, claim, symbol, severity, true);
             append_text(txt_report, sizeof(txt_report), &txt_len, txt_line);
 
             jsonl_line[0] = '\0';
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        "{\"type\":\"vitair_claim\",\"ir_version\":\"");
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, VITA_IR_VERSION);
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        "\",\"claim\":\"");
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, claim);
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        "\",\"state\":");
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, state_num);
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        ",\"severity\":\"");
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, severity);
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        "\"}\n");
+            append_vitair_claim_jsonl_line(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, claim, state_num, severity);
             append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len, jsonl_line);
         }
     }
@@ -922,19 +921,12 @@ static void handle_export_vitair(const vita_command_context_t *ctx) {
             char jsonl_line[384];
             size_t jsonl_line_len = 0U;
             const char *claim = safe_text(claims[i].claim, "unknown.claim");
-            const char *state_num = vita_tri_to_json_number(claims[i].state);
-            const char *severity = vita_ir_severity_to_string(claims[i].severity);
+            const char *state_num = safe_vitair_state_num(claims[i].state);
+            const char *severity = safe_vitair_severity(claims[i].severity);
             const char *actor = safe_text(claims[i].actor, "unknown");
             const char *target = safe_text(claims[i].target, "unknown");
             const char *meaning = safe_text(claims[i].meaning, "unknown");
             const char *effect = safe_text(claims[i].effect, "unknown");
-
-            if (!state_num || !state_num[0]) {
-                state_num = "0";
-            }
-            if (!severity || !severity[0]) {
-                severity = "warn";
-            }
 
             jsonl_line[0] = '\0';
             append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
@@ -1035,46 +1027,17 @@ static void handle_selftest(const vita_command_context_t *ctx) {
             char jsonl_line[256];
             size_t txt_line_len = 0U;
             size_t jsonl_line_len = 0U;
-            const char *claim = (claims[i].claim && claims[i].claim[0]) ? claims[i].claim : "unknown.claim";
-            const char *symbol = vita_tri_to_symbol(claims[i].state);
-            const char *state_num = vita_tri_to_json_number(claims[i].state);
-            const char *severity = vita_ir_severity_to_string(claims[i].severity);
-
-            if (!symbol || !symbol[0]) {
-                symbol = "0";
-            }
-            if (!state_num || !state_num[0]) {
-                state_num = "0";
-            }
-            if (!severity || !severity[0]) {
-                severity = "warn";
-            }
+            const char *claim = safe_text(claims[i].claim, "unknown.claim");
+            const char *symbol = safe_vitair_symbol(claims[i].state);
+            const char *state_num = safe_vitair_state_num(claims[i].state);
+            const char *severity = safe_vitair_severity(claims[i].severity);
 
             txt_line[0] = '\0';
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, "- ");
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, claim);
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, ": ");
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, symbol);
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, " ");
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, severity);
-            append_text(txt_line, sizeof(txt_line), &txt_line_len, "\n");
+            append_vitair_claim_txt_line(txt_line, sizeof(txt_line), &txt_line_len, claim, symbol, severity, true);
             append_text(txt_report, sizeof(txt_report), &txt_len, txt_line);
 
             jsonl_line[0] = '\0';
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        "{\"type\":\"vitair_claim\",\"ir_version\":\"");
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, VITA_IR_VERSION);
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        "\",\"claim\":\"");
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, claim);
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        "\",\"state\":");
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, state_num);
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        ",\"severity\":\"");
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, severity);
-            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
-                        "\"}\n");
+            append_vitair_claim_jsonl_line(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, claim, state_num, severity);
             append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len, jsonl_line);
         }
     }
