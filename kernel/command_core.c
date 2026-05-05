@@ -768,13 +768,25 @@ static void handle_audit_sqlite_summary(const vita_command_context_t *ctx) {
 
 static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
     vita_storage_status_t st;
+    vita_audit_runtime_status_t rt;
+    vita_ir_claim_t claims[VITA_IR_AUDIT_CLAIM_MAX];
+    size_t claim_count;
+    size_t i;
     const char *txt_ready;
     const char *txt_limited;
     const char *jsonl_ready;
     const char *jsonl_limited;
     const char *txt_path = "/vita/export/reports/diagnostic-bundle.txt";
     const char *jsonl_path = "/vita/export/reports/diagnostic-bundle.jsonl";
+    static char txt_report[4096];
+    static char jsonl_report[4096];
+    size_t txt_len = 0U;
+    size_t jsonl_len = 0U;
+
     storage_get_status(&st);
+    resolve_audit_runtime_status(ctx, &rt);
+    claim_count = vita_ir_claims_from_audit_runtime(&rt, claims, VITA_IR_AUDIT_CLAIM_MAX);
+
     if (st.bootstrap_verified && starts_with(st.backend_name, "uefi_simple_fs")) {
         txt_ready = "Diagnostico VitaOS / VitaOS diagnostic\n[estado]\ndiagnostic_bundle: generated\n[auditoria]\naudit_mode: hosted_sqlite_ready\n[almacenamiento]\narch: x86_64\nfirmware: hosted\nboot_mode: hosted\nboot_id: unknown\nnode_id: unknown\nhost_id: unknown\nstorage_backend: uefi_simple_fs\nstorage_state: verified\n[hardware]\nhardware_snapshot: available\n[limitaciones]\nwifi_transport: no implementado\nnetwork_remote_ai: no implementado\n";
         txt_limited = "Diagnostico VitaOS / VitaOS diagnostic\n[estado]\ndiagnostic_bundle: generated\n[auditoria]\naudit_mode: uefi_restricted_diagnostic\n[almacenamiento]\narch: x86_64\nfirmware: uefi\nboot_mode: uefi\nboot_id: unknown\nnode_id: unknown\nhost_id: unknown\nstorage_backend: uefi_simple_fs\nstorage_state: verified\n[hardware]\nhardware_snapshot: no disponible\n[limitaciones]\nwifi_transport: no implementado\nnetwork_remote_ai: no implementado\n";
@@ -787,10 +799,62 @@ static void handle_diagnostic_bundle(const vita_command_context_t *ctx) {
         jsonl_limited = "{\"type\":\"diagnostic_bundle\",\"audit_mode\":\"uefi_restricted_diagnostic\",\"arch\":\"x86_64\",\"firmware\":\"uefi\",\"boot_mode\":\"uefi\",\"boot_id\":\"unknown\",\"node_id\":\"unknown\",\"host_id\":\"unknown\",\"storage_backend\":\"unknown\",\"storage_state\":\"degraded\"}\n";
     }
 
-    if (write_report_pair_verified(txt_path,
-                          (ctx && ctx->boot_status.audit_ready) ? txt_ready : txt_limited,
-                          jsonl_path,
-                          (ctx && ctx->boot_status.audit_ready) ? jsonl_ready : jsonl_limited)) {
+    append_text(txt_report, sizeof(txt_report), &txt_len,
+                (ctx && ctx->boot_status.audit_ready) ? txt_ready : txt_limited);
+    append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len,
+                (ctx && ctx->boot_status.audit_ready) ? jsonl_ready : jsonl_limited);
+    append_text(txt_report, sizeof(txt_report), &txt_len, "[VitaIR-Tri]\n");
+
+    if (claim_count == 0U) {
+        append_text(txt_report, sizeof(txt_report), &txt_len, "VitaIR-Tri runtime claims: unavailable\n");
+        append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len,
+                    "{\"type\":\"vitair_claims\",\"ir_version\":\"" VITA_IR_VERSION "\",\"status\":\"unavailable\"}\n");
+    } else {
+        append_text(txt_report, sizeof(txt_report), &txt_len, "VitaIR-Tri runtime claims:\n");
+        for (i = 0; i < claim_count; ++i) {
+            char txt_line[192];
+            char jsonl_line[256];
+            size_t txt_line_len = 0U;
+            size_t jsonl_line_len = 0U;
+            const char *claim = safe_text(claims[i].claim, "unknown.claim");
+            const char *symbol = vita_tri_to_symbol(claims[i].state);
+            const char *state_num = vita_tri_to_json_number(claims[i].state);
+            const char *severity = vita_ir_severity_to_string(claims[i].severity);
+
+            if (!symbol || !symbol[0]) { symbol = "0"; }
+            if (!state_num || !state_num[0]) { state_num = "0"; }
+            if (!severity || !severity[0]) { severity = "warn"; }
+
+            txt_line[0] = '\0';
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, "- ");
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, claim);
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, ": ");
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, symbol);
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, " ");
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, severity);
+            append_text(txt_line, sizeof(txt_line), &txt_line_len, "\n");
+            append_text(txt_report, sizeof(txt_report), &txt_len, txt_line);
+
+            jsonl_line[0] = '\0';
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "{\"type\":\"vitair_claim\",\"ir_version\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, VITA_IR_VERSION);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"claim\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, claim);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\",\"state\":");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, state_num);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        ",\"severity\":\"");
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len, severity);
+            append_text(jsonl_line, sizeof(jsonl_line), &jsonl_line_len,
+                        "\"}\n");
+            append_text(jsonl_report, sizeof(jsonl_report), &jsonl_len, jsonl_line);
+        }
+    }
+
+    if (write_report_pair_verified(txt_path, txt_report, jsonl_path, jsonl_report)) {
         console_write_line("diagnostic: written");
         return;
     }
