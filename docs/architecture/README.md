@@ -5,6 +5,7 @@ Este directorio agrupa documentos de arquitectura operativa del sistema.
 Archivos sugeridos:
 - `vitaos-architecture-tracks.md`
 - `vitaos-implemented-vs-planned.md`
+- `linux-assisted-vitaos.md`
 - `boot-flow.md`
 - `ai-core.md`
 - `kernel-layout.md`
