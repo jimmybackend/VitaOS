@@ -52,9 +52,9 @@ Example:
 
 This means SQLite is unavailable, while other subsystems (such as storage or JSONL journal) may still be operational.
 
-## Future JSONL-oriented examples
+## JSONL-oriented examples
 
-VitaIR-Tri is designed to be exported as JSONL in future phases.
+VitaIR-Tri exports are available in the current hosted milestone flow.
 
 ```json
 {"ir_version":"vitair-tri/0.1","claim":"storage.writable","state":1,"severity":"info","actor":"storage","target":"/vita","meaning":"persistent storage writable","effect":"normal"}
@@ -74,26 +74,29 @@ VitaIR-Tri is designed to be exported as JSONL in future phases.
 - SQLite schema and tables remain authoritative when SQLite backend is available.
 - VitaIR-Tri can coexist with SQLite by describing availability and state claims, including partial-path limitations.
 
-## Code baseline (PR 2)
+## Current implementation status
 
-The current base code introduces these VitaIR-Tri foundational C types:
+The current codebase includes these VitaIR-Tri foundational C types:
 
 - `vita_tri_t`
 - `vita_ir_severity_t`
 - `vita_ir_claim_t`
 
-This baseline defines types and conversion/validation helpers, and now includes audit-runtime to VitaIR-Tri claim mapping in C. It does not yet wire runtime export persistence, audit export integration, selftest wiring, or diagnostic command behavior changes.
+Current behavior also includes:
+
+- C conversion/validation helpers and runtime mapper.
+- Integration in command display paths for `status`, `audit`, and `storage status`.
+- Integration in `selftest` and `diagnostic` TXT/JSONL outputs.
+- Export paths for `export vitair`, `export vitair-state`, and `/vita/export/reports/vitair-state.jsonl`.
 
 ## Current limits (this milestone)
 
-- Runtime export integration is not implemented yet.
-- No kernel behavior changes.
-- No storage behavior changes.
-- No schema changes.
-- No export contract changes.
-- No selftest behavior changes.
-- No hosted AI bridge implementation.
-- No network/AWS claims added.
+- No Hosted AI Bridge implementation.
+- No AWS integration.
+- No full native network stack completeness claim.
+- No full persistent SQLite backend availability in the freestanding UEFI path.
+- No complete local AI autonomy implementation.
+- VitaIR-Tri does not replace SQLite and does not replace TXT/JSONL audit transcripts.
 
 ## Safety rules for claims
 
