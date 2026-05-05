@@ -377,8 +377,13 @@ void console_guided_show_menu(void) {
     console_write_line("- status");
     console_write_line("- hw");
     console_write_line("- audit");
+    console_write_line("- storage status");
     console_write_line("- peers");
     console_write_line("- proposals");
+    console_write_line("- selftest");
+    console_write_line("- diagnostic");
+    console_write_line("- export vitair");
+    console_write_line("- export vitair-state");
     console_write_line("- emergency");
     console_write_line("- helpme");
     console_write_line("- clear");
@@ -392,8 +397,13 @@ void console_guided_show_help(void) {
     console_write_line("status      -> show current guided status");
     console_write_line("hw          -> show hardware summary when available");
     console_write_line("audit       -> show audit readiness and restricted-mode note");
+    console_write_line("storage status -> show storage readiness summary");
     console_write_line("peers       -> show cooperative nodes summary");
     console_write_line("proposals   -> list current system proposals");
+    console_write_line("selftest    -> run local self-check and export report");
+    console_write_line("diagnostic  -> export local diagnostic bundle");
+    console_write_line("export vitair -> export VitaIR-Tri report");
+    console_write_line("export vitair-state -> alias of export vitair");
     console_write_line("emergency   -> enter emergency-oriented flow");
     console_write_line("helpme      -> show this help and guided menu");
     console_write_line("clear       -> clear screen and redraw guided header");

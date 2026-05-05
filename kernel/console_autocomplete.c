@@ -21,6 +21,7 @@ static const char *g_commands[] = {
     "storage status", "storage check", "storage last-error", "storage read", "storage notes", "storage notes list",
     "export session", "export jsonl", "diagnostic", "diag", "export diagnostic",
     "export index", "export manifest", "export list", "exports", "storage export-index",
+    "export vitair", "export vitair-state",
     "selftest", "self-test", "boot selftest", "boot self-test", "checkup",
     "shutdown", "exit"
 };
@@ -30,7 +31,7 @@ static const char *g_known_paths[] = {
     "/vita/export/reports/", "/vita/tmp/", "/vita/notes/usb-test.txt", "/vita/audit/session-journal.txt",
     "/vita/audit/session-journal.jsonl", "/vita/export/reports/last-session.txt",
     "/vita/export/reports/last-session.jsonl", "/vita/export/reports/diagnostic-bundle.txt",
-    "/vita/export/reports/self-test.txt"
+    "/vita/export/reports/self-test.txt", "/vita/export/reports/vitair-state.jsonl"
 };
 
 static unsigned long str_len(const char *s){unsigned long n=0;while(s&&s[n])n++;return n;}
