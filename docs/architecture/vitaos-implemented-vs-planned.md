@@ -29,9 +29,9 @@ This document clarifies what VitaOS currently does, what is partial (especially 
 | network / Wi‑Fi | **Planned / future** | Only minimal hosted VitaNet peer/discovery slice should be assumed; full Wi‑Fi/network stack is not complete. |
 | AWS Bedrock | **Planned / future** | Not milestone-complete as a validated always-available runtime capability. |
 | local AI | **Planned / future** | Full local autonomous AI runtime is not implemented as a complete guaranteed capability. |
-| Hosted AI Bridge | **Partially implemented / hosted-first** | Hosted integration surface exists for current slice; avoid claiming full production-grade autonomy. |
+| Hosted AI Bridge | **Planned / future** | No production Hosted AI Bridge should be claimed yet. Any hosted integration surface must remain explicitly experimental or planned until implemented and validated. |
 | GUI / browser | **Planned / future** | Explicit non-goal for current milestone. |
-| Linux-Assisted VitaOS ISO | **Partially implemented / hosted-first** | Linux-assisted build/packaging path exists as bring-up aid; not equivalent to full on-hardware milestone closure. |
+| Linux-Assisted VitaOS ISO | **Planned / future** | No Linux-Assisted VitaOS ISO should be claimed yet. This track is architectural/planned until a real build path, artifact, and validation flow exist. |
 | ISO/USB real validation | **Planned / future** | Real hardware validation matrix is not complete enough for broad claims. |
 
 ## Must not be claimed yet (explicit)
@@ -45,6 +45,8 @@ The following claims are out-of-scope unless newly implemented and validated:
 5. Full local AI autonomy with complete safety/ops controls.
 6. Production-complete GUI/browser userland.
 7. Broad ISO/USB hardware validation closure across diverse machines.
+8. Production Hosted AI Bridge.
+9. Linux-Assisted VitaOS ISO or rescue image.
 
 ## Claiming policy reminder
 
