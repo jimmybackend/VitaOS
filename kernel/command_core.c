@@ -573,7 +573,9 @@ static void show_emergency(const vita_command_context_t *ctx, const char *free_t
     if (ctx && ctx->boot_status.audit_ready) {
         console_write_line("READY / LISTA");
     } else {
-        console_write_line("FAILED - restricted diagnostic mode / FALLA - modo diagnostico restringido");
+        console_write_line("Audit journal: active when persistent storage is available");
+        console_write_line("Audit SQLite: unavailable");
+        console_write_line("Operational mode: restricted diagnostic");
     }
 
     audit_emit_boot_event("EMERGENCY_FLOW_SHOWN", free_text && free_text[0] ? free_text : "emergency command");

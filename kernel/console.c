@@ -416,7 +416,7 @@ void console_guided_show_status(const vita_console_state_t *state) {
     console_write_kv("Boot mode: ", safe_text(state->boot_mode, "unknown"));
     console_write_kv("Language: ", safe_text(state->language_mode, "es,en"));
     console_write_line(state->console_ready ? "Console: OK" : "Console: MISSING");
-    console_write_line(state->audit_ready ? "Audit: READY" : "Audit: FAILED");
+    console_write_line(state->audit_ready ? "Audit SQLite: READY" : "Audit SQLite: UNAVAILABLE");
     console_write_line(state->proposal_engine_ready ? "Proposal engine: READY" : "Proposal engine: OFFLINE");
     console_write_line(state->node_core_ready ? "Node core: READY" : "Node core: LIMITED");
     console_write_kv_u32("Peers discovered: ", state->peer_count);

@@ -74,7 +74,7 @@ if ! grep -q "Audit SQLite: UNAVAILABLE" "$LOG_FILE"; then
   exit 1
 fi
 
-if ! grep -q "Operational mode blocked / Modo operativo bloqueado" "$LOG_FILE"; then
+if ! grep -q "Operational mode: restricted diagnostic because SQLite audit is unavailable." "$LOG_FILE"; then
   echo "smoke failed: restricted guided mode line not found" >&2
   exit 1
 fi
