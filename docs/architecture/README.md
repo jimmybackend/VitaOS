@@ -6,6 +6,7 @@ Archivos sugeridos:
 - `vitaos-architecture-tracks.md`
 - `vitaos-implemented-vs-planned.md`
 - `linux-assisted-vitaos.md`
+- `linux-assisted-boot-countdown.md`
 - `boot-flow.md`
 - `ai-core.md`
 - `kernel-layout.md`
