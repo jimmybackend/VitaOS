@@ -384,6 +384,7 @@ void console_guided_show_menu(void) {
     console_write_line("- diagnostic");
     console_write_line("- export vitair");
     console_write_line("- export vitair-state");
+    console_write_line("- linux countdown");
     console_write_line("- emergency");
     console_write_line("- helpme");
     console_write_line("- clear");
@@ -404,6 +405,7 @@ void console_guided_show_help(void) {
     console_write_line("diagnostic  -> export local diagnostic bundle");
     console_write_line("export vitair -> export VitaIR-Tri report");
     console_write_line("export vitair-state -> alias of export vitair");
+    console_write_line("linux countdown -> safe preview of planned Linux-assisted countdown");
     console_write_line("emergency   -> enter emergency-oriented flow");
     console_write_line("helpme      -> show this help and guided menu");
     console_write_line("clear       -> clear screen and redraw guided header");

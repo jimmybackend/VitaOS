@@ -969,6 +969,18 @@ static void handle_export_vitair(const vita_command_context_t *ctx) {
     console_write_line("export vitair: failed");
 }
 
+
+static void handle_linux_assisted_countdown_stub(void) {
+    audit_emit_boot_event("COMMAND_LINUX_COUNTDOWN", "linux countdown");
+    console_write_line("VitaOS Linux-Assisted boot");
+    console_write_line("Press any key or type text to stay in Native VitaOS Core.");
+    console_write_line("No input detected: starting Linux assistant in 3...");
+    console_write_line("No input detected: starting Linux assistant in 2...");
+    console_write_line("No input detected: starting Linux assistant in 1...");
+    console_write_line("Starting Linux assistant...");
+    console_write_line("Linux assistant handoff: not implemented");
+}
+
 static void handle_selftest(const vita_command_context_t *ctx) {
     vita_audit_runtime_status_t rt;
     vita_ir_claim_t claims[VITA_IR_AUDIT_CLAIM_MAX];
@@ -1227,6 +1239,11 @@ vita_command_result_t command_handle_line(vita_command_context_t *ctx, const cha
         str_eq(cmd, "boot selftest") || str_eq(cmd, "boot self-test") ||
         str_eq(cmd, "checkup")) {
         handle_selftest(ctx);
+        return VITA_COMMAND_CONTINUE;
+    }
+
+    if (str_eq(cmd, "linux countdown") || str_eq(cmd, "linux-assisted countdown")) {
+        handle_linux_assisted_countdown_stub();
         return VITA_COMMAND_CONTINUE;
     }
 
