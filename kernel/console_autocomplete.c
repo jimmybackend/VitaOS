@@ -22,6 +22,7 @@ static const char *g_commands[] = {
     "export session", "export jsonl", "diagnostic", "diag", "export diagnostic",
     "export index", "export manifest", "export list", "exports", "storage export-index",
     "export vitair", "export vitair-state",
+    "linux countdown", "linux-assisted countdown",
     "selftest", "self-test", "boot selftest", "boot self-test", "checkup",
     "shutdown", "exit"
 };
